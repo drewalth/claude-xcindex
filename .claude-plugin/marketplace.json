@@ -1,0 +1,14 @@
+{
+  "name": "claude-xcindex-local",
+  "owner": {
+    "name": "Andrew Althage",
+    "url": "https://github.com/drewalth"
+  },
+  "plugins": [
+    {
+      "name": "claude-xcindex",
+      "source": "./",
+      "description": "Query Xcode's pre-built symbol index from Claude Code. Surgical, semantic Swift/ObjC symbol lookups — find references, definitions, overrides, conformances, and blast radius without reading full files."
+    }
+  ]
+}
