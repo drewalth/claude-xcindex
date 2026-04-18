@@ -263,15 +263,43 @@ doesn't balloon.
 
 ## Complementary tools
 
-This plugin focuses on **semantic queries** over an already-built index. It
-does not build, test, or run your project. Pair it with:
+This plugin focuses on **semantic queries** over Xcode's on-disk index. It
+is not a language server, does not operate on live source, and does not
+build, test, or run your project. Pair it with:
+
+### Anthropic's [`swift-lsp`](https://claude.com/plugins/swift-lsp)
+
+Live language-server features — completion, diagnostics, hover,
+jump-to-definition — backed by SourceKit-LSP. Different layer of the stack:
+`swift-lsp` talks to a running SourceKit-LSP server over live source;
+`claude-xcindex` reads the on-disk `indexstore-db` that Xcode writes during
+build. They don't overlap.
+
+| | `swift-lsp` | `claude-xcindex` |
+|---|---|---|
+| Backend | SourceKit-LSP server | `indexstore-db` reader |
+| Source of truth | live Swift source | Xcode build-time index |
+| Requires Xcode build? | No | Yes (once) |
+| Diagnostics & completion | Yes | No |
+| Hover / jump-to-definition | Yes | Definition only |
+| Overrides / conformances / blast-radius | Not first-class | Yes |
+| Works on Linux / SwiftPM-only | Yes | No (DerivedData-specific) |
+| Warm query latency | LSP round-trip | sub-millisecond |
+| Freshness model | always live | hook-warned when stale |
+
+Use `swift-lsp` for IDE features on live source. Use `claude-xcindex` for
+refactor-grade queries (USR-authoritative references, overrides,
+conformances, blast-radius) at sub-millisecond warm latency, with explicit
+freshness annotations when Claude has edited files since the last build.
+
+### Build and test orchestration
 
 - **Apple's [`mcpbridge`](https://developer.apple.com/documentation/xcode)**
   (ships with Xcode 26.3+) for build, test, preview, and documentation.
 - **[`XcodeBuildMCP`](https://github.com/cameroncooke/XcodeBuildMCP)** for
   build/test/simulator orchestration on older Xcode versions.
 
-Install both — they don't overlap.
+Install alongside `claude-xcindex` — they don't overlap.
 
 ## Troubleshooting
 
