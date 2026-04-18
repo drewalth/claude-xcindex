@@ -95,6 +95,256 @@ final class IndexQuerier {
             return $0.column < $1.column
         }
     }
+
+    // MARK: - findSymbol
+
+    /// Return candidate symbols matching `symbolName` with kind, language, and
+    /// definition location. Useful as a disambiguation step before findRefs/findDefinition.
+    func findSymbol(symbolName: String) -> [SymbolResult] {
+        var seen = Set<String>()
+        var results: [SymbolResult] = []
+
+        let canonical = db.canonicalOccurrences(ofName: symbolName)
+        for occ in canonical {
+            guard seen.insert(occ.symbol.usr).inserted else { continue }
+            guard !occ.location.isSystem else { continue }
+            results.append(SymbolResult(
+                usr: occ.symbol.usr,
+                name: occ.symbol.name,
+                kind: occ.symbol.kind.kindDescription,
+                language: occ.symbol.language.languageDescription,
+                definitionPath: occ.location.path,
+                definitionLine: occ.location.line
+            ))
+        }
+
+        return results.sorted { $0.usr < $1.usr }
+    }
+
+    // MARK: - findDefinition
+
+    /// Return the canonical (definition) occurrence for a given USR.
+    func findDefinition(usr: String) -> OccurrenceResult? {
+        let defOccurrences = db.occurrences(ofUSR: usr, roles: [.definition])
+        guard let occ = defOccurrences.first(where: { !$0.location.isSystem }) else {
+            // Fall back to declaration if no definition in user code
+            let declOccurrences = db.occurrences(ofUSR: usr, roles: [.declaration])
+            guard let decl = declOccurrences.first(where: { !$0.location.isSystem }) else {
+                return nil
+            }
+            return OccurrenceResult(
+                usr: usr,
+                symbolName: decl.symbol.name,
+                path: decl.location.path,
+                line: decl.location.line,
+                column: decl.location.utf8Column,
+                roles: decl.roles.humanReadable
+            )
+        }
+        return OccurrenceResult(
+            usr: usr,
+            symbolName: occ.symbol.name,
+            path: occ.location.path,
+            line: occ.location.line,
+            column: occ.location.utf8Column,
+            roles: occ.roles.humanReadable
+        )
+    }
+
+    // MARK: - findOverrides
+
+    /// Return all symbols that override the method/property identified by `usr`.
+    ///
+    /// Uses the `overrideOf` relation to find the overriding implementations.
+    func findOverrides(usr: String) -> [OccurrenceResult] {
+        // Symbols that have `overrideOf` relation pointing to our USR
+        let related = db.occurrences(relatedToUSR: usr, roles: [.overrideOf])
+        var seen = Set<String>()
+        var results: [OccurrenceResult] = []
+
+        for occ in related {
+            guard !occ.location.isSystem else { continue }
+            let key = "\(occ.location.path):\(occ.location.line)"
+            guard seen.insert(key).inserted else { continue }
+            results.append(OccurrenceResult(
+                usr: occ.symbol.usr,
+                symbolName: occ.symbol.name,
+                path: occ.location.path,
+                line: occ.location.line,
+                column: occ.location.utf8Column,
+                roles: occ.roles.humanReadable
+            ))
+        }
+
+        return results.sorted {
+            if $0.path != $1.path { return $0.path < $1.path }
+            return $0.line < $1.line
+        }
+    }
+
+    // MARK: - findConformances
+
+    /// Return all types that conform to the protocol identified by `usr`.
+    ///
+    /// Uses the `baseOf` relation — conforming types have a `baseOf` relation
+    /// pointing to the protocol's USR.
+    func findConformances(usr: String) -> [OccurrenceResult] {
+        let related = db.occurrences(relatedToUSR: usr, roles: [.baseOf])
+        var seen = Set<String>()
+        var results: [OccurrenceResult] = []
+
+        for occ in related {
+            guard !occ.location.isSystem else { continue }
+            let key = "\(occ.location.path):\(occ.location.line)"
+            guard seen.insert(key).inserted else { continue }
+            results.append(OccurrenceResult(
+                usr: occ.symbol.usr,
+                symbolName: occ.symbol.name,
+                path: occ.location.path,
+                line: occ.location.line,
+                column: occ.location.utf8Column,
+                roles: occ.roles.humanReadable
+            ))
+        }
+
+        return results.sorted {
+            if $0.path != $1.path { return $0.path < $1.path }
+            return $0.line < $1.line
+        }
+    }
+
+    // MARK: - blastRadius
+
+    /// Given a source file path, return the minimal set of files that depend on it:
+    ///   - direct dependents (files that import/include this file, or call its symbols)
+    ///   - transitive callers (files of callers' callers, one hop)
+    ///   - covering tests (test files in the affected set)
+    ///
+    /// This is the token-saving query: Claude reads only these files, not the whole repo.
+    func blastRadius(filePath: String) -> BlastRadiusResult {
+        // Step 1: find all symbols defined in `filePath`
+        let definedSymbols = db.symbols(inFilePath: filePath)
+
+        // Step 2: for each symbol, find all reference sites outside `filePath`
+        var directCallerFiles = Set<String>()
+        for symbol in definedSymbols {
+            let refs = db.occurrences(
+                ofUSR: symbol.usr,
+                roles: [.reference, .call, .read, .write]
+            )
+            for ref in refs {
+                guard !ref.location.isSystem, ref.location.path != filePath else { continue }
+                directCallerFiles.insert(ref.location.path)
+            }
+        }
+
+        // Step 3: one hop of transitive callers
+        // Find symbols defined in directCallerFiles, then their callers
+        var transitiveFiles = Set<String>()
+        for callerFile in directCallerFiles {
+            let callerSymbols = db.symbols(inFilePath: callerFile)
+            for sym in callerSymbols {
+                let refs = db.occurrences(ofUSR: sym.usr, roles: [.reference, .call])
+                for ref in refs {
+                    guard !ref.location.isSystem,
+                          ref.location.path != filePath,
+                          !directCallerFiles.contains(ref.location.path) else { continue }
+                    transitiveFiles.insert(ref.location.path)
+                }
+            }
+        }
+
+        let allAffected = Array(directCallerFiles.union(transitiveFiles)).sorted()
+        let directDeps = directCallerFiles.sorted()
+
+        // Heuristic: test files contain "Test" or "Spec" in their filename
+        let tests = allAffected.filter { path in
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            return name.contains("Test") || name.contains("Spec")
+        }
+
+        return BlastRadiusResult(
+            affectedFiles: allAffected,
+            coveringTests: tests,
+            directDependents: directDeps
+        )
+    }
+
+    // MARK: - status
+
+    /// Return freshness info about the index store.
+    func status(storePath: String) -> StatusResult {
+        let fm = FileManager.default
+        var indexMtime: String? = nil
+
+        if let attrs = try? fm.attributesOfItem(atPath: storePath),
+           let mtime = attrs[.modificationDate] as? Date {
+            let formatter = ISO8601DateFormatter()
+            indexMtime = formatter.string(from: mtime)
+        }
+
+        return StatusResult(
+            indexStorePath: storePath,
+            indexMtime: indexMtime,
+            staleFileCount: 0, // populated by the TS layer which tracks session edits
+            staleFiles: [],
+            summary: indexMtime == nil
+                ? "Index store not found at \(storePath)."
+                : "Index store found at \(storePath) (last modified \(indexMtime!))."
+        )
+    }
+}
+
+// MARK: - IndexSymbolKind description
+
+extension IndexSymbolKind {
+    var kindDescription: String {
+        switch self {
+        case .unknown:          return "unknown"
+        case .module:           return "module"
+        case .namespace:        return "namespace"
+        case .namespaceAlias:   return "namespaceAlias"
+        case .macro:            return "macro"
+        case .`enum`:           return "enum"
+        case .struct:           return "struct"
+        case .`class`:          return "class"
+        case .protocol:         return "protocol"
+        case .extension:        return "extension"
+        case .union:            return "union"
+        case .typealias:        return "typealias"
+        case .function:         return "function"
+        case .variable:         return "variable"
+        case .field:            return "field"
+        case .enumConstant:     return "enumCase"
+        case .instanceMethod:   return "instanceMethod"
+        case .classMethod:      return "classMethod"
+        case .staticMethod:     return "staticMethod"
+        case .instanceProperty: return "instanceProperty"
+        case .classProperty:    return "classProperty"
+        case .staticProperty:   return "staticProperty"
+        case .constructor:      return "constructor"
+        case .destructor:       return "destructor"
+        case .conversionFunction: return "conversionFunction"
+        case .parameter:        return "parameter"
+        case .using:            return "using"
+        case .concept:          return "concept"
+        case .commentTag:       return "commentTag"
+        @unknown default:       return "unknown"
+        }
+    }
+}
+
+// MARK: - Language description
+
+extension Language {
+    var languageDescription: String {
+        switch self {
+        case .c:     return "c"
+        case .cxx:   return "c++"
+        case .objc:  return "objc"
+        case .swift: return "swift"
+        }
+    }
 }
 
 // MARK: - IndexStoreLibrary loading

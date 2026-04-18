@@ -23,8 +23,55 @@ export interface FindRefsRequest {
   symbolName: string;
 }
 
-// More ops will be added in step 4
-export type SwiftRequest = FindRefsRequest;
+export interface FindSymbolRequest {
+  op: "findSymbol";
+  projectPath?: string;
+  indexStorePath?: string;
+  symbolName: string;
+}
+
+export interface FindDefinitionRequest {
+  op: "findDefinition";
+  projectPath?: string;
+  indexStorePath?: string;
+  usr: string;
+}
+
+export interface FindOverridesRequest {
+  op: "findOverrides";
+  projectPath?: string;
+  indexStorePath?: string;
+  usr: string;
+}
+
+export interface FindConformancesRequest {
+  op: "findConformances";
+  projectPath?: string;
+  indexStorePath?: string;
+  usr: string;
+}
+
+export interface BlastRadiusRequest {
+  op: "blastRadius";
+  projectPath?: string;
+  indexStorePath?: string;
+  filePath: string;
+}
+
+export interface StatusRequest {
+  op: "status";
+  projectPath?: string;
+  indexStorePath?: string;
+}
+
+export type SwiftRequest =
+  | FindRefsRequest
+  | FindSymbolRequest
+  | FindDefinitionRequest
+  | FindOverridesRequest
+  | FindConformancesRequest
+  | BlastRadiusRequest
+  | StatusRequest;
 
 export interface OccurrenceResult {
   usr: string;
@@ -39,12 +86,31 @@ export interface SymbolResult {
   usr: string;
   name: string;
   kind: string;
+  language: string;
+  definitionPath?: string;
+  definitionLine?: number;
+}
+
+export interface StatusResult {
+  indexStorePath: string;
+  indexMtime: string | null;
+  staleFileCount: number;
+  staleFiles: string[];
+  summary: string;
+}
+
+export interface BlastRadiusResult {
+  affectedFiles: string[];
+  coveringTests: string[];
+  directDependents: string[];
 }
 
 export interface SwiftResponse {
   error?: string;
   occurrences?: OccurrenceResult[];
   symbols?: SymbolResult[];
+  status?: StatusResult;
+  blastRadius?: BlastRadiusResult;
 }
 
 // ---------------------------------------------------------------------------
