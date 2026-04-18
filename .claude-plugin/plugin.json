@@ -1,6 +1,6 @@
 {
   "name": "claude-xcindex",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Query Xcode's pre-built symbol index from Claude Code. Surgical, semantic Swift/ObjC symbol lookups — find references, definitions, overrides, conformances, and blast radius without reading full files.",
   "author": {
     "name": "Andrew Althage",
@@ -20,7 +20,9 @@
   "mcp_servers": {
     "xcindex": {
       "command": "node",
-      "args": ["${plugin_dir}/mcp/dist/server.js"]
+      "args": [
+        "${plugin_dir}/mcp/dist/server.js"
+      ]
     }
   }
 }
