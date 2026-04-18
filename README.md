@@ -1,9 +1,17 @@
 # claude-xcindex
 
+> **An MCP bridge to Xcode's SourceKit symbol index for Claude Code.** USR-based references, overrides, conformances, and blast-radius queries via `indexstore-db` — the same library SourceKit-LSP uses.
+
 A [Claude Code](https://claude.com/claude-code) plugin that gives Claude
-surgical, semantic access to Xcode's pre-built symbol index — so refactors,
-reference lookups, and impact analysis on Swift/ObjC projects cost a fraction
-of the tokens of `grep`-and-read-file workflows.
+semantic access to Xcode's on-disk symbol index so refactors, reference
+lookups, and impact analysis on Swift/ObjC projects don't fall back to
+`grep`-and-read-file.
+
+- Reads the LMDB index Xcode already writes to `DerivedData/…/Index.noindex/` on build. No re-indexing, no separate daemon.
+- Returns USR-grounded results with file, line, column, and role (call / read / write / override) — not text matches.
+- Resolves the things `grep` can't: protocol witnesses, extensions, overrides, `@objc` bridging, module-scoped name collisions.
+- Tracks index staleness per-session via `PostToolUse` hooks; tool responses annotate files edited since the last build. Never triggers a build on your behalf.
+- Tool schema, freshness logic, and error formatting live in TypeScript. The Swift subprocess is a thin stdio loop over `IndexStoreDB` — easy to audit.
 
 ---
 
