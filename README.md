@@ -124,8 +124,11 @@ Re-run it after `git pull`.
 From inside Claude Code, add the plugin as a local marketplace entry:
 
 ```
-/plugin marketplace add /absolute/path/to/claude-xcindex
-/plugin install claude-xcindex
+# TODO: marketplace distribution
+# /plugin marketplace add /absolute/path/to/claude-xcindex
+# /plugin install claude-xcindex
+
+claude --plugin-dir /absolute/path/to/claude-xcindex
 ```
 
 Verify:
