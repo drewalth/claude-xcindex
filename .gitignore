@@ -5,3 +5,4 @@ mcp/swift-service/.build/
 mcp/node_modules/
 mcp/dist/
 mcp/package-lock.json
+node_modules/
