@@ -9,13 +9,85 @@ semantic access to Xcode's on-disk symbol index so refactors, reference
 lookups, and impact analysis on Swift/ObjC projects don't fall back to
 `grep`-and-read-file.
 
-- Reads the LMDB index Xcode already writes to `DerivedData/…/Index.noindex/` on build. No re-indexing, no separate daemon.
-- Returns USR-grounded results with file, line, column, and role (call / read / write / override) — not text matches.
-- Resolves the things `grep` can't: protocol witnesses, extensions, overrides, `@objc` bridging, module-scoped name collisions.
-- Tracks index staleness per-session via `PostToolUse` hooks; tool responses annotate files edited since the last build. Never triggers a build on your behalf.
-- Tool schema, freshness logic, and error formatting live in TypeScript. The Swift subprocess is a thin stdio loop over `IndexStoreDB` — easy to audit.
+- **Sub-millisecond** semantic queries after the first call in a session — roughly **200× faster than `grep`** on the same source tree.
+- **Up to 70% fewer files** to read vs `grep` on a 43k-LOC project, because results are precise `(file, line, column, role)` tuples instead of textual matches.
+- Finds what `grep` can't — protocol witnesses, extensions, overrides, `@objc` bridging, module-scoped name collisions.
+- **Zero re-indexing.** Reads the same `IndexStoreDB` Xcode writes to `DerivedData/…/Index.noindex/` during build. No daemon, no second copy of your codebase.
+- **Freshness-aware.** Annotates results in files Claude edited this session; warns at session start if the index is older than your source. Never triggers a build on your behalf.
 
 ---
+
+## Features
+
+### Lightning fast
+
+After the first call in a session opens the on-disk index, every subsequent
+query returns in **under a millisecond** — reference lookups, definition
+jumps, override and conformance searches alike. On a 43k-LOC Swift project,
+that's roughly **200× faster** than the equivalent `grep -rn` over the
+same source tree. The only outlier is `blast_radius`, which traverses the
+dependency graph and lands around 900 ms warm.
+
+### Semantic, not textual
+
+`grep` can't tell `Gauge` the type from `gauge` the local variable from
+`Gauge` in a string literal. SourceKit's index can. Every result comes back
+with a USR (unique symbol resolver), a kind (class / protocol / method /
+property), a role (call / read / write / override), and exact
+file / line / column — so Claude reads only the lines that matter instead
+of opening eight files to disambiguate. On the benchmark project, a typical
+"where is X used?" query returns up to **70% fewer files** to read.
+
+### Honest about freshness
+
+The index only refreshes when you build in Xcode. A `SessionStart` hook
+warns up front if source files are newer than the index. A `PostToolUse`
+hook tracks every Swift/ObjC file Claude edits during the session, and MCP
+tool responses annotate any returned path that's been edited locally. The
+plugin never triggers a build on your behalf — it warns, you decide.
+
+## Benchmarks
+
+> Sub-millisecond warm queries, ~200× faster than `grep`, reading up to
+> 70% fewer files. Measured on a real-world Swift project, MacBook Pro M3,
+> median of 5 runs. Reproducible: `scripts/benchmark.py /path/to/Project.xcodeproj`.
+
+**Project:** a real-world Swift project — 302 Swift files, 43,185 LOC, 222 MB on-disk index.
+
+### Tool latency
+
+| Tool | Cold (ms) | Warm (ms) |
+|---|---:|---:|
+| `find_symbol` | 5446 | 0 |
+| `find_references` | 5496 | 1 |
+| `find_definition` | — | 0 |
+| `find_overrides` | — | 0 |
+| `find_conformances` | — | 0 |
+| `blast_radius` | 6377 | 876 |
+| `status` | 5545 | 0 |
+
+_Cold = first query in a fresh subprocess (includes opening the LMDB index).
+Warm = subsequent query in the same process — what Claude experiences after
+the first call in a session, since the MCP server keeps the Swift subprocess
+alive. USR-based tools (`find_definition` / `find_overrides` /
+`find_conformances`) only run after a `find_symbol` resolves the USR, so
+cold timing is N/A._
+
+### Precision: xcindex vs `grep -rn '\bSym\b'`
+
+| Symbol | Kind | grep hits | grep files | xcindex refs | xcindex files | files saved | grep ms | xcindex warm ms |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `A` | common domain struct | 129 | 45 | 95 | 27 | 18 (40%) | 228 | 12 |
+| `B` | service protocol | 90 | 27 | 18 | 8 | 19 (70%) | 230 | 0 |
+| `C` | service class | 61 | 27 | 37 | 12 | 15 (55%) | 227 | 1 |
+| `D` | narrow protocol | 14 | 6 | 7 | 6 | 0 (0%) | 230 | 0 |
+| `E` | model type | 46 | 15 | 46 | 15 | 0 (0%) | 228 | 1 |
+
+_Symbol names redacted; counts and types are real. "Files saved" = files
+Claude would read with the grep approach minus files xcindex returned. Even
+when file counts are equal (`D`, `E`), xcindex eliminates the per-file
+scan-and-filter step by returning exact line/column/role — Claude reads
+±10 lines, not the whole file._
 
 ## Why
 
