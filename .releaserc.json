@@ -12,7 +12,7 @@
     [
       "@semantic-release/exec",
       {
-        "publishCmd": "echo ${nextRelease.version} > ${env.GITHUB_WORKSPACE:-.}/.release-version"
+        "publishCmd": "echo ${nextRelease.version} > .release-version"
       }
     ],
     "@semantic-release/github"
