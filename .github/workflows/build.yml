@@ -44,7 +44,7 @@ jobs:
     name: release
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: macos-26
     permissions:
       contents: write
       issues: write
@@ -59,6 +59,9 @@ jobs:
         with:
           node-version: 24
 
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
       - name: semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -70,3 +73,41 @@ jobs:
           --package @semantic-release/git
           --package conventional-changelog-conventionalcommits
           -- semantic-release
+
+      - name: Detect release
+        id: detect
+        run: |
+          if [[ -f .release-version ]]; then
+            version=$(cat .release-version | tr -d '[:space:]')
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+            echo "Published v$version"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "No release published"
+          fi
+
+      - name: Build universal binary
+        if: steps.detect.outputs.published == 'true'
+        working-directory: service
+        run: |
+          swift build -c release --arch arm64 --arch x86_64
+          binary=".build/apple/Products/Release/xcindex"
+          if [[ ! -f "$binary" ]]; then
+            echo "ERROR: universal binary not found at $binary" >&2
+            find .build -type f -name xcindex >&2
+            exit 1
+          fi
+          lipo -info "$binary"
+          codesign -s - --force --options runtime "$binary"
+          codesign -dvv "$binary" 2>&1
+          cp "$binary" "$RUNNER_TEMP/xcindex"
+
+      - name: Upload binary to release
+        if: steps.detect.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.detect.outputs.tag }}" \
+            "$RUNNER_TEMP/xcindex" --clobber

@@ -1,5 +1,5 @@
 {
-  "originHash" : "b16224fd124f26533d755f18460a0642d8084748be47208f697aca422ad8f83c",
+  "originHash" : "26c07cb79258353267c3024cbaa4079c6a7c66b15d29f4cb1d1ab6b141f5f2b6",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -15,7 +15,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/indexstore-db.git",
       "state" : {
-        "branch" : "main",
         "revision" : "4ee7a49edc48e94361c3477623deeffb25dbed0d"
       }
     },

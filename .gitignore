@@ -1,2 +1,5 @@
 # Swift build output
 service/.build/
+
+# semantic-release sentinel (created in CI only)
+.release-version
