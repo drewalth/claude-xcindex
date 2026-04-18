@@ -1,0 +1,26 @@
+{
+  "description": "claude-xcindex hooks: freshness check at session start, stale-index tracking on Swift file edits",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/post-edit.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "claude-xcindex",
+  "version": "0.1.0",
+  "description": "Query Xcode's pre-built symbol index from Claude Code. Surgical, semantic Swift/ObjC symbol lookups — find references, definitions, overrides, conformances, and blast radius without reading full files.",
+  "author": {
+    "name": "andrewalthage"
+  },
+  "license": "MIT",
+  "keywords": [
+    "swift",
+    "xcode",
+    "ios",
+    "macos",
+    "symbols",
+    "indexstore",
+    "refactoring",
+    "navigation"
+  ]
+}
