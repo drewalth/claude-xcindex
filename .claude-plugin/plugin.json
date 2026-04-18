@@ -4,7 +4,12 @@
   "description": "Query Xcode's pre-built symbol index from Claude Code. Surgical, semantic Swift/ObjC symbol lookups — find references, definitions, overrides, conformances, and blast radius without reading full files.",
   "author": {
     "name": "Andrew Althage",
-    "url": "https://github.com/drewalth/claude-xcindex"
+    "url": "https://github.com/drewalth"
+  },
+  "homepage": "https://github.com/drewalth/claude-xcindex",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/drewalth/claude-xcindex.git"
   },
   "license": "MIT",
   "keywords": [
@@ -16,13 +21,5 @@
     "indexstore",
     "refactoring",
     "navigation"
-  ],
-  "mcp_servers": {
-    "xcindex": {
-      "command": "node",
-      "args": [
-        "${plugin_dir}/mcp/dist/server.js"
-      ]
-    }
-  }
+  ]
 }

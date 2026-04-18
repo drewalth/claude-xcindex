@@ -12,63 +12,67 @@ subagent, and a slash command. See `README.md` for user-facing docs.
 ## Build & run
 
 ```sh
-./build.sh                         # release build of both layers
-./build.sh --debug                 # debug build of both layers
+./build.sh                         # release build
+./build.sh --debug                 # debug build
 
-cd mcp && npm run build            # TypeScript only
-cd mcp && npm run dev              # TypeScript watch mode
-cd mcp/swift-service && swift build -c release
-cd mcp/swift-service && swift test
-cd mcp/swift-service && swift test --filter xcindexTests.example   # single test
+cd service && swift build -c release
+cd service && swift test
+cd service && swift test --filter xcindexTests.example   # single test
 ```
 
-`build.sh` is the entry point — it runs `npm install && npm run build` for the
-Node server and `swift build -c release` for the Swift binary, then smoke-tests
-the binary with a JSON-RPC `status` request. Re-run it after `git pull`.
-
-Outputs that must exist for the plugin to work:
-- `mcp/dist/server.js` (Node MCP server — the one Claude Code connects to)
-- `mcp/swift-service/.build/release/xcindex` (Swift subprocess; `SwiftBridge`
-  falls back to `.build/debug/xcindex` if release is missing)
+`build.sh` just wraps `swift build -c release` in the `service/` directory.
+Re-run after `git pull`. The binary Claude Code launches is
+`service/.build/release/xcindex`.
 
 ## Architecture
 
-Two-layer pipeline. Claude Code talks **only** to the Node MCP server; the
-Node server owns the tool schema and spawns the Swift binary as a child
-process, communicating over newline-delimited JSON over stdio.
+Single Swift binary. Claude Code spawns `service/.build/release/xcindex`
+directly via `.mcp.json`; the binary speaks MCP over stdio using the
+official [modelcontextprotocol/swift-sdk](https://github.com/modelcontextprotocol/swift-sdk).
 
 ```
-Claude Code ──MCP/stdio──▶ mcp/dist/server.js ──JSON/stdio──▶ xcindex (Swift) ──▶ IndexStoreDB
+Claude Code ──MCP/stdio──▶ xcindex (Swift) ──▶ IndexStoreDB
 ```
 
-**Intentional asymmetry**: all MCP schema, tool descriptions, freshness
-annotation, error formatting, and user-facing strings live in TypeScript
-(`mcp/src/server.ts`). The Swift binary stays deliberately small — just a
-stdio read loop (`main.swift`) → `RequestProcessor` → `IndexQuerier`. When
-adding a tool, you extend both layers but the user-visible surface belongs in
-TS.
+The source tree:
+
+- `service/Sources/xcindex/main.swift` — starts the MCP `Server` with a
+  `StdioTransport` and parks on `waitUntilCompleted()`.
+- `service/Sources/xcindex/MCPServer.swift` — tool registration (schemas,
+  descriptions) and the `CallTool` dispatcher that formats text output.
+  All user-visible strings live here.
+- `service/Sources/xcindex/RequestProcessor.swift` — an actor that caches
+  `IndexQuerier` instances by store path and routes internal ops.
+- `service/Sources/xcindex/Queries.swift` — the actual IndexStoreDB queries.
+- `service/Sources/xcindex/Freshness.swift` — session-edited-file tracking
+  shared with the bash hooks via a state file in `$TMPDIR`.
+- `service/Sources/xcindex/DerivedData.swift` — resolves the IndexStore
+  DataStore path from a project path.
+- `service/Sources/xcindex/Models.swift` — internal wire types used by
+  `RequestProcessor` (not MCP-visible).
+
+When adding a tool: register it in `ToolDefinitions.all` (MCPServer.swift),
+add a dispatch case in `Dispatcher.handle`, add a `handle<Op>` method on
+`RequestProcessor`, add a query method on `IndexQuerier`.
 
 ### Contracts that must stay in sync
 
-- **Wire types**: `mcp/src/swift-bridge.ts` (`SwiftRequest`/`SwiftResponse`)
-  must match `mcp/swift-service/Sources/xcindex/Models.swift`. Adding a field
-  requires touching both.
-- **Op dispatch**: each `op` string in `SwiftRequest` must have a matching
-  case in `RequestProcessor.handle`.
 - **Session state file path** is derived in *three* places and must match
-  byte-for-byte: `mcp/src/freshness.ts#stateFilePath`,
+  byte-for-byte: `service/Sources/xcindex/Freshness.swift#stateFilePath`,
   `hooks/session-start.sh`, `hooks/post-edit.sh`. Format:
   `$TMPDIR/xcindex-edited-<sha1(cwd) first 12 chars>.txt`, one absolute path
   per line. `CLAUDE_PROJECT_DIR` overrides `cwd` in all three.
+- **Op dispatch**: each `op` string in `Request` (Models.swift) must have a
+  matching case in `RequestProcessor.handle` and a corresponding MCP tool in
+  `ToolDefinitions.all`.
 
-### Swift subprocess model
+### Concurrency
 
-`SwiftBridge` keeps one persistent Swift process per MCP server instance.
-`IndexQuerier` caches an open `IndexStoreDB` handle per store path, so repeat
-queries don't re-open the database. A FIFO promise chain in `SwiftBridge.send`
-serializes requests — the line-oriented protocol would desync if two callers
-wrote concurrently to stdin. If the subprocess dies, pending resolvers are
-drained with an error and the next `send` respawns it.
+`Server.start(transport:)` spawns a detached task that handles MCP requests
+concurrently. Tool handlers run in parallel tasks. `RequestProcessor` is an
+actor so the `querierCache` is race-free; each `IndexQuerier` is reached
+only through the actor, which keeps IndexStoreDB access serialized per store
+path.
 
 ### Freshness model
 
@@ -78,8 +82,8 @@ invalidates it. We track this without triggering builds:
 - `SessionStart` hook truncates the state file and prints a freshness note.
 - `PostToolUse` hook on `Edit|Write|MultiEdit` appends edited Swift/ObjC paths
   to the state file.
-- Every MCP tool response calls `staleNote(paths)` and appends a warning if
-  any returned path was edited this session.
+- Every MCP tool response calls `Freshness.staleNote(involvedPaths:)` and
+  appends a warning if any returned path was edited this session.
 
 Hooks **warn, never act** — no automatic builds. This is deliberate.
 
@@ -108,9 +112,10 @@ bash so the hook can warn before any MCP call.
 ## Conventions
 
 - Tools are exposed under the `mcp__xcindex__*` namespace (auto-prefixed by
-  Claude Code from the server name in `.mcp.json`).
+  Claude Code from the server key in `.mcp.json`).
 - Always do `find_symbol` → get USR → `find_references`/`find_definition`/
   `find_overrides`/`find_conformances`. Name-based lookups are for
   disambiguation; USR-based lookups are the authoritative ones.
-- Keep the Swift binary's surface minimal. If you're tempted to add formatting
-  or user-facing strings to Swift, put them in TypeScript instead.
+- Keep tool text formatting in `MCPServer.swift` (the `Dispatcher` enum).
+  `RequestProcessor` and `Queries` should return structured data, not
+  user-facing strings.

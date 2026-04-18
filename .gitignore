@@ -1,8 +1,9 @@
 # Swift build output
-mcp/swift-service/.build/
+service/.build/
 
-# Node
-mcp/node_modules/
-mcp/dist/
-mcp/package-lock.json
-node_modules/
+# semantic-release sentinel (created in CI only)
+.release-version
+
+# The xcindex binary is cached here at runtime by bin/run (never committed)
+bin/xcindex
+bin/xcindex.download.*

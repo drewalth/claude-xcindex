@@ -1,4 +1,4 @@
-![Hero](./assets/hero.png)
+![Hero](https://raw.githubusercontent.com/drewalth/claude-xcindex/main/assets/hero.png)
 
 #### An MCP bridge to Xcode's SourceKit symbol index for Claude Code. USR-based references, overrides, conformances, and blast-radius queries via `indexstore-db` — the same library SourceKit-LSP uses.
 
@@ -122,20 +122,19 @@ claude-xcindex plugin
 ├── Skills          — tell Claude WHEN to use the index
 ├── Hooks           — freshness warnings at session start and after edits
 ├── Subagent        — isolated context for large renames
-├── Slash command   — /xcindex-status
-├── MCP server (TS) — tool registration, schema, error handling
-└── Swift service   — spawned subprocess, queries IndexStoreDB
+├── Slash commands  — /xcindex-setup, /xcindex-status
+└── Swift binary    — MCP server, queries IndexStoreDB
     ↓ (reads LMDB)
 DerivedData/Index.noindex/DataStore
     ↑ (writes during build)
 Xcode
 ```
 
-Claude Code only talks to the MCP server. The TypeScript MCP server spawns a
-tiny Swift binary and communicates with it over its own stdio JSON-RPC. All
-MCP schema, descriptions, freshness logic, and error handling live in
-TypeScript. The Swift binary stays small — a request/response loop over
-`IndexStoreDB`.
+A single native Swift binary speaks MCP directly using Anthropic's
+official [Swift SDK](https://github.com/modelcontextprotocol/swift-sdk)
+and queries `IndexStoreDB` — the same library SourceKit-LSP uses. No
+Node runtime, no intermediate process: Claude Code spawns the binary,
+the binary talks to the index.
 
 ### MCP tool surface
 
@@ -182,51 +181,52 @@ Builds are **never** triggered automatically. Hooks warn, they don't act.
 ## Requirements
 
 - macOS 14 (Sonoma) or later — `indexstore-db` requires macOS 14+.
-- Xcode with command-line tools installed (`xcode-select --install`).
-- Node.js 18 or later.
+- macOS 13 or later.
+- Xcode 16 or later, with command-line tools installed (`xcode-select --install`).
 - [Claude Code](https://claude.com/claude-code).
 - An Xcode project (`.xcodeproj` or `.xcworkspace`) that has been built at
   least once, so the DerivedData index exists.
 
 ## Install
 
-### 1. Clone and build
+From inside Claude Code:
+
+```
+/plugin install drewalth/claude-xcindex
+```
+
+The first time the plugin starts in a session, it downloads the matching
+`xcindex` binary from the GitHub release and caches it under the plugin
+directory. No `npm install`, no manual build step.
+
+Then, in a Swift project:
+
+```
+/xcindex-setup
+```
+
+This command confirms the binary is ready, locates your Xcode project,
+and — with your confirmation — runs `xcodebuild` for each scheme so the
+symbol index is populated. Skip it if you build in Xcode yourself;
+xcindex just reads whatever index Xcode has already written to
+DerivedData.
+
+Verify anytime with `/plugin` (should list `claude-xcindex`) and
+`/xcindex-status` (reports the resolved index path and freshness).
+
+### Install from source
+
+For contributors, or if you want to pin to a specific commit:
 
 ```sh
 git clone https://github.com/drewalth/claude-xcindex.git
-cd claude-xcindex
-./build.sh
+cd claude-xcindex/service && swift build -c release
+# Then in Claude Code:
+/plugin install /absolute/path/to/claude-xcindex
 ```
 
-The build script compiles both the TypeScript MCP server and the Swift binary.
-Re-run it after `git pull`.
-
-### 2. Install into Claude Code
-
-From inside Claude Code, add the plugin as a local marketplace entry:
-
-```
-# TODO: marketplace distribution
-# /plugin marketplace add /absolute/path/to/claude-xcindex
-# /plugin install claude-xcindex
-
-claude --plugin-dir /absolute/path/to/claude-xcindex
-```
-
-Verify:
-
-```
-/plugin
-```
-
-You should see `claude-xcindex` listed, and `mcp__xcindex__*` tools should
-appear in Claude's tool list.
-
-### 3. Build your Xcode project once
-
-The plugin reads Xcode's on-disk index. If you've never built the project in
-Xcode (Cmd+B), the index won't exist. Build once; the plugin takes care of
-everything from there, and will warn you if the index goes stale.
+The launcher detects the from-source build at
+`service/.build/release/xcindex` and symlinks it instead of downloading.
 
 ## How to use
 
@@ -314,9 +314,11 @@ annotate stale results in its responses.
 
 **MCP tools don't appear in Claude Code.**
 Run `/plugin` to confirm the plugin is installed. If listed but tools are
-missing, check that `./build.sh` completed without errors — specifically,
-that `mcp/dist/server.js` and `mcp/swift-service/.build/release/xcindex`
-both exist.
+missing, the launcher couldn't resolve the xcindex binary — check that
+either `bin/xcindex` exists, `service/.build/release/xcindex` exists, or
+a matching release asset exists at
+`https://github.com/drewalth/claude-xcindex/releases`. `/xcindex-setup`
+will rebuild from source as a fallback.
 
 **Custom DerivedData location.**
 The plugin reads `IDECustomDerivedDataLocation` from Xcode's preferences
@@ -326,8 +328,8 @@ will report where it looked.
 ## Development
 
 ```sh
-./build.sh --debug          # debug build, both layers
-cd mcp && npm run dev       # watch TypeScript
+./build.sh --debug                       # debug build
+cd service && swift test                 # run tests
 ```
 
 Layout:
@@ -335,15 +337,14 @@ Layout:
 ```
 claude-xcindex/
 ├── .claude-plugin/plugin.json     # Claude Code plugin manifest
-├── .mcp.json                      # MCP server registration
-├── mcp/
-│   ├── src/                       # TypeScript MCP server
-│   └── swift-service/             # Swift CLI wrapping IndexStoreDB
+├── .mcp.json                      # MCP server registration → bin/run
+├── bin/run                        # launcher: download/symlink, then exec xcindex
+├── service/                       # Swift MCP server (IndexStoreDB + swift-sdk)
 ├── skills/                        # swift-find-references, blast-radius, rename
 ├── agents/swift-refactor-specialist.md
-├── commands/xcindex-status.md
+├── commands/                      # /xcindex-setup, /xcindex-status
 ├── hooks/                         # session-start.sh, post-edit.sh
-└── build.sh
+└── build.sh                       # convenience wrapper for swift build -c release
 ```
 
 Pull requests welcome. Please open an issue to discuss architectural changes

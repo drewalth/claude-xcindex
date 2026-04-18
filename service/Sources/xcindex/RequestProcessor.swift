@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Keeps an open `IndexQuerier` cached by store path so repeated queries
 /// against the same project don't re-open the database each time.
-final class RequestProcessor {
+actor RequestProcessor {
     private var querierCache: [String: IndexQuerier] = [:]
 
     func handle(_ request: Request) -> Response {
