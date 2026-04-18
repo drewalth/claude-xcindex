@@ -2,6 +2,8 @@
 
 #### An MCP bridge to Xcode's SourceKit symbol index for Claude Code. USR-based references, overrides, conformances, and blast-radius queries via `indexstore-db` — the same library SourceKit-LSP uses.
 
+[![build](https://github.com/drewalth/claude-xcindex/actions/workflows/build.yml/badge.svg)](https://github.com/drewalth/claude-xcindex/actions/workflows/build.yml)
+
 ---
 
 A [Claude Code](https://claude.com/claude-code) plugin that gives Claude
