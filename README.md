@@ -361,6 +361,10 @@ Please open an issue to discuss architectural changes before submitting.
 - [`michaelversus/SwiftFindRefs`](https://github.com/michaelversus/SwiftFindRefs)
   — CLI with the same core query, narrower scope.
 
+## Privacy
+
+This plugin runs entirely on your local machine. It does not collect, transmit, or store any personal data, telemetry, or usage analytics. The only network requests are to GitHub to download the prebuilt binary on first run. All symbol index queries are performed locally against Xcode's on-disk index in your DerivedData directory.
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
