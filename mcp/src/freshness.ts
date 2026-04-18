@@ -2,60 +2,83 @@
  * Stale-index detection utilities.
  *
  * Claude edits .swift files during a session; the Xcode index is only updated
- * on build. This module tracks which source files were edited since the index
- * was last built so MCP tool responses can annotate results with staleness
- * warnings.
+ * on build. Because the PostToolUse hook runs as a separate bash process, it
+ * can't write to in-memory state in this Node server. We use a shared state
+ * file instead: the hook appends edited paths to the file, and the MCP server
+ * reads the file on each query. SessionStart truncates the file.
+ *
+ * State-file location: $TMPDIR/xcindex-edited-<cwd-hash>.txt
+ * Format: one absolute file path per line
  */
 
-import { stat } from "node:fs/promises";
+import { statSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
+import path from "node:path";
 
 // ---------------------------------------------------------------------------
-// Session-scoped edit tracker
+// State file
 // ---------------------------------------------------------------------------
 
-/** Set of absolute paths of .swift files edited this session. */
-const editedFiles = new Set<string>();
+/**
+ * Resolve the path to the session state file for the current working directory.
+ * Must match the path derivation used by `hooks/post-edit.sh` and
+ * `hooks/session-start.sh`.
+ */
+export function stateFilePath(): string {
+  const cwd = process.env.CLAUDE_PROJECT_DIR ?? process.cwd();
+  const hash = createHash("sha1").update(cwd).digest("hex").slice(0, 12);
+  return path.join(tmpdir(), `xcindex-edited-${hash}.txt`);
+}
 
-/** Mark a file as edited this session. */
-export function markEdited(filePath: string): void {
-  if (filePath.endsWith(".swift") || filePath.endsWith(".m") || filePath.endsWith(".mm")) {
-    editedFiles.add(filePath);
+/** Read the current set of session-edited files from the state file. */
+export function getEditedFiles(): Set<string> {
+  const file = stateFilePath();
+  if (!existsSync(file)) return new Set();
+  try {
+    const contents = readFileSync(file, "utf8");
+    return new Set(
+      contents
+        .split("\n")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+    );
+  } catch {
+    return new Set();
   }
 }
 
-/** Return the set of files edited this session. */
-export function getEditedFiles(): ReadonlySet<string> {
-  return editedFiles;
+// ---------------------------------------------------------------------------
+// Stale-note helpers
+// ---------------------------------------------------------------------------
+
+/** Append a staleness note to a result string if relevant files were edited. */
+export function staleNote(involvedPaths: string[]): string | null {
+  const edited = getEditedFiles();
+  const stale = involvedPaths.filter((p) => edited.has(p));
+  if (stale.length === 0) return null;
+  const names = stale.map((f) => f.split("/").pop() ?? f).join(", ");
+  return `Note: ${names} ${stale.length === 1 ? "was" : "were"} edited this session after the index was built; results may be stale.`;
 }
 
 // ---------------------------------------------------------------------------
-// Index freshness check
+// Index freshness check (used by xcindex_status)
 // ---------------------------------------------------------------------------
 
 export interface FreshnessInfo {
-  /** mtime of the most-recently-written unit file in the store. */
   indexMtime: Date | null;
-  /** Source files whose mtime is newer than the index. */
   staleFiles: string[];
-  /** Human-readable summary for session-start context injection. */
   summary: string;
 }
 
 /**
- * Check whether the index at `storePath` is fresh relative to a list of
- * source files. Pass the project's source root — we'll glob for .swift files.
+ * Compare the session-edited file list against the index mtime.
+ * Returns which edited files are newer than the last index write.
  */
-export async function checkFreshness(
-  storePath: string,
-  sourceRoot?: string
-): Promise<FreshnessInfo> {
-  // Get the mtime of the DataStore directory itself as a proxy for last index
-  // write. A more precise check would walk the unit files, but directory mtime
-  // is fast and good enough for a warning.
+export function checkFreshness(storePath: string): FreshnessInfo {
   let indexMtime: Date | null = null;
   try {
-    const s = await stat(storePath);
-    indexMtime = s.mtime;
+    indexMtime = statSync(storePath).mtime;
   } catch {
     return {
       indexMtime: null,
@@ -64,14 +87,11 @@ export async function checkFreshness(
     };
   }
 
-  // Check session-edited files against index mtime
+  const edited = getEditedFiles();
   const staleFiles: string[] = [];
-  for (const f of editedFiles) {
+  for (const f of edited) {
     try {
-      const s = await stat(f);
-      if (s.mtime > indexMtime) {
-        staleFiles.push(f);
-      }
+      if (statSync(f).mtime > indexMtime) staleFiles.push(f);
     } catch {
       /* file deleted or inaccessible */
     }
@@ -93,13 +113,4 @@ export async function checkFreshness(
       `${staleFiles.length} source file(s) edited this session after the index was built ` +
       `(${names}). Results for symbols in those files may be stale.`,
   };
-}
-
-/** Append a staleness note to a result string if relevant files were edited. */
-export function staleNote(involvedPaths: string[]): string | null {
-  const edited = [...editedFiles];
-  const stale = involvedPaths.filter((p) => edited.includes(p));
-  if (stale.length === 0) return null;
-  const names = stale.map((f) => f.split("/").pop() ?? f).join(", ");
-  return `Note: ${names} ${stale.length === 1 ? "was" : "were"} edited this session after the index was built; results may be stale.`;
 }

@@ -19,16 +19,16 @@ description: Use BEFORE running grep or ripgrep on .swift files when the user
 
 - The symbol is local to one file (just read the file directly)
 - The user is asking about a string literal or comment (use Grep)
-- `xcindex_status` reports the index is stale and the user hasn't built recently
+- `status` reports the index is stale and the user hasn't built recently
 - The project has no DerivedData (never built in Xcode)
 
 # How to use
 
-1. **Disambiguate first** — call `xcindex_find_symbol` with the name to get candidate USRs.
+1. **Disambiguate first** — call `find_symbol` with the name to get candidate USRs.
    - If multiple results, pick the one matching the correct module/kind.
    - If exactly one result, proceed directly.
 
-2. **Find references** — call `xcindex_find_references` with the `symbolName`.
+2. **Find references** — call `find_references` with the `symbolName`.
    - Use `maxResults: 100` (default) for most symbols.
    - For framework entry points or common types, use `maxResults: 200–500`.
 
@@ -40,7 +40,7 @@ description: Use BEFORE running grep or ripgrep on .swift files when the user
 
 ```
 BAD:  rg "UserService" --include="*.swift"   → 40 noisy text matches, 8 full file reads
-GOOD: xcindex_find_references("UserService") → 6 exact locations, 6 focused reads
+GOOD: find_references("UserService") → 6 exact locations, 6 focused reads
 ```
 
 The index gives semantic matches: it distinguishes `UserService` the class from
@@ -51,6 +51,6 @@ cannot do this.
 
 User: "What calls `fetchUser`?"
 
-1. `xcindex_find_symbol(symbolName: "fetchUser")` → USR `s:9MyApp0A4ServiceC9fetchUseryySiF`
-2. `xcindex_find_references(symbolName: "fetchUser")` → 4 call sites
+1. `find_symbol(symbolName: "fetchUser")` → USR `s:9MyApp0A4ServiceC9fetchUseryySiF`
+2. `find_references(symbolName: "fetchUser")` → 4 call sites
 3. Read the 4 locations with ±10 lines each → done

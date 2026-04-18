@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 # claude-xcindex: session-start hook
 #
-# Checks the Xcode index freshness for any .xcodeproj / .xcworkspace in the
-# current working directory and emits a short warning if the index is stale.
-#
-# This runs at session start (SessionStart hook). It injects context into
-# the conversation so Claude knows whether it can trust index results.
+# 1. Truncate the session state file used to track edited Swift/ObjC files
+#    (must match mcp/src/freshness.ts#stateFilePath and hooks/post-edit.sh).
+# 2. If a .xcodeproj / .xcworkspace lives in the current working directory,
+#    check its index freshness and emit a short note so Claude knows whether
+#    to trust xcindex_* results.
 #
 # Exit 0 always — a missing index is informative, not fatal.
 
 set -euo pipefail
 
 CWD="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+# ── Truncate session state file ───────────────────────────────────────────────
+
+TMP="${TMPDIR:-/tmp}"
+TMP="${TMP%/}"
+HASH=$(printf '%s' "$CWD" | shasum -a 1 | cut -c1-12)
+STATE_FILE="${TMP}/xcindex-edited-${HASH}.txt"
+: > "$STATE_FILE" 2>/dev/null || true
 
 # ── Find the nearest .xcodeproj or .xcworkspace ──────────────────────────────
 
@@ -31,7 +39,7 @@ find_project() {
 PROJECT=$(find_project 2>/dev/null || true)
 
 if [[ -z "$PROJECT" ]]; then
-    # No Xcode project found — nothing to check
+    # No Xcode project found — nothing to check, state file already reset
     exit 0
 fi
 
@@ -53,8 +61,8 @@ DATA_STORE=$(
 )
 
 if [[ -z "$DATA_STORE" || ! -d "$DATA_STORE/Index.noindex/DataStore" ]]; then
-    echo "⚠️  [xcindex] No index found for ${PROJECT_NAME}." \
-         "Build the project in Xcode to enable semantic symbol queries."
+    echo "[xcindex] No Xcode index found for ${PROJECT_NAME}." \
+         "Build the project in Xcode to enable semantic symbol queries via xcindex_* tools."
     exit 0
 fi
 
@@ -70,7 +78,9 @@ while IFS= read -r -d '' f; do
     FILE_MTIME=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
     if (( FILE_MTIME > INDEX_MTIME )); then
         STALE_COUNT=$((STALE_COUNT + 1))
-        STALE_FILES+=("$(basename "$f")")
+        if (( ${#STALE_FILES[@]} < 5 )); then
+            STALE_FILES+=("$(basename "$f")")
+        fi
     fi
 done < <(find "$CWD" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
 
@@ -82,10 +92,15 @@ if (( STALE_COUNT == 0 )); then
     echo "[xcindex] Index is current for ${PROJECT_NAME} (last built ${INDEX_DATE})." \
          "xcindex_* tools are available for semantic symbol queries."
 else
-    NAMES="${STALE_FILES[*]:0:5}"
-    echo "⚠️  [xcindex] ${STALE_COUNT} Swift file(s) newer than the index for ${PROJECT_NAME}" \
-         "(last built ${INDEX_DATE}): ${NAMES}$(( ${#STALE_FILES[@]} > 5 )) && echo ' ...' || true)." \
-         "Consider building in Xcode before running xcindex_* queries, or expect stale results."
+    # Join the first few file names with commas, add ellipsis if truncated
+    NAMES_JOINED=$(printf "%s, " "${STALE_FILES[@]}" | sed 's/, $//')
+    ELLIPSIS=""
+    if (( STALE_COUNT > ${#STALE_FILES[@]} )); then
+        ELLIPSIS=", ..."
+    fi
+    echo "[xcindex] ${STALE_COUNT} Swift file(s) newer than the index for ${PROJECT_NAME}" \
+         "(last built ${INDEX_DATE}): ${NAMES_JOINED}${ELLIPSIS}." \
+         "Build in Xcode before xcindex_* queries, or expect stale results."
 fi
 
 exit 0

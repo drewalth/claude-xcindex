@@ -23,7 +23,7 @@ description: Use BEFORE reading multiple files when the user asks "what does thi
 
 # How to use
 
-1. Call `xcindex_blast_radius` with the absolute file path.
+1. Call `blast_radius` with the absolute file path.
 2. Read the result:
    - `directDependents` — files that directly call symbols defined in the target file
    - `affectedFiles` — direct + one hop of transitive callers
@@ -35,7 +35,7 @@ description: Use BEFORE reading multiple files when the user asks "what does thi
 
 ```
 BAD:  Read 20 files to "understand the codebase" before editing NetworkClient.swift
-GOOD: xcindex_blast_radius("NetworkClient.swift")
+GOOD: blast_radius("NetworkClient.swift")
       → directDependents: [APIService.swift, AuthManager.swift]
       → coveringTests: [NetworkClientTests.swift]
       Read only those 3 files. Save 17 file reads.
@@ -45,7 +45,7 @@ GOOD: xcindex_blast_radius("NetworkClient.swift")
 
 User: "I need to refactor `ModelData.swift`. What do I need to read first?"
 
-1. `xcindex_blast_radius(filePath: "/path/to/ModelData.swift")`
+1. `blast_radius(filePath: "/path/to/ModelData.swift")`
 2. Returns 5 direct dependents + 2 test files
 3. Read those 7 files → understand the full impact surface
 4. Make the refactor with confidence

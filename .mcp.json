@@ -1,6 +1,8 @@
 {
-  "xcindex": {
-    "command": "node",
-    "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/dist/server.js"]
+  "mcpServers": {
+    "xcindex": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/dist/server.js"]
+    }
   }
 }

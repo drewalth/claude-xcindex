@@ -5,14 +5,14 @@
  * Claude can do surgical, semantic symbol lookups instead of shotgun grep.
  *
  * Tool surface (step 3: one tool; step 4 adds the rest):
- *   xcindex_find_references  — all occurrence sites for a symbol by name
+ *   find_references  — all occurrence sites for a symbol by name
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { SwiftBridge } from "./swift-bridge.js";
-import { staleNote } from "./freshness.js";
+import { staleNote, getEditedFiles } from "./freshness.js";
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -26,15 +26,15 @@ const server = new McpServer({
 const bridge = new SwiftBridge();
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_find_references
+// Tool: find_references
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_find_references",
+  "find_references",
   "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
   "Returns exact file+line+column+role for each reference — no false positives from " +
   "comments, strings, or same-named symbols in other modules. " +
-  "Call xcindex_find_symbol first if you need to disambiguate overloads. " +
+  "Call find_symbol first if you need to disambiguate overloads. " +
   "Requires the project to have been built in Xcode at least once.",
   {
     symbolName: z.string().describe(
@@ -49,7 +49,7 @@ server.tool(
     indexStorePath: z.string().optional().describe(
       "Absolute path to the IndexStore DataStore directory " +
       "(e.g. ~/Library/Developer/Xcode/DerivedData/MyApp-abc123/Index.noindex/DataStore). " +
-      "Overrides projectPath. Use xcindex_status to find this path."
+      "Overrides projectPath. Use status to find this path."
     ),
     maxResults: z.number().int().min(1).max(500).optional().default(100).describe(
       "Cap on the number of occurrences returned (default 100, max 500). " +
@@ -116,23 +116,23 @@ const projectParams = {
   ),
   indexStorePath: z.string().optional().describe(
     "Absolute path to the IndexStore DataStore directory. " +
-    "Overrides projectPath. Use xcindex_status to find this path."
+    "Overrides projectPath. Use status to find this path."
   ),
 };
 
 const usrParam = z.string().describe(
-  "Unified Symbol Resolution identifier obtained from xcindex_find_symbol or " +
-  "xcindex_find_references (the 'usr' field on any result)."
+  "Unified Symbol Resolution identifier obtained from find_symbol or " +
+  "find_references (the 'usr' field on any result)."
 );
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_find_symbol
+// Tool: find_symbol
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_find_symbol",
+  "find_symbol",
   "Look up a symbol by name and return its kind, language, USR, and definition location. " +
-  "Use this BEFORE xcindex_find_references or xcindex_find_definition to disambiguate " +
+  "Use this BEFORE find_references or find_definition to disambiguate " +
   "overloaded names (e.g. multiple types named 'Delegate' in different modules). " +
   "Returns one result per distinct symbol that exactly matches the name.",
   {
@@ -165,13 +165,13 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_find_definition
+// Tool: find_definition
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_find_definition",
+  "find_definition",
   "Return the canonical definition site (file + line) for a symbol identified by USR. " +
-  "Use after xcindex_find_symbol to jump to the declaration. " +
+  "Use after find_symbol to jump to the declaration. " +
   "More precise than text search because it uses the semantic USR, not the symbol name.",
   {
     usr: usrParam,
@@ -195,14 +195,14 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_find_overrides
+// Tool: find_overrides
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_find_overrides",
+  "find_overrides",
   "Find all classes or structs that override a given method or property. " +
   "Essential before changing a method signature in a base class. " +
-  "Pass the USR from xcindex_find_symbol for the base method.",
+  "Pass the USR from find_symbol for the base method.",
   {
     usr: usrParam,
     ...projectParams,
@@ -227,13 +227,13 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_find_conformances
+// Tool: find_conformances
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_find_conformances",
+  "find_conformances",
   "Find all types that conform to a Swift protocol. " +
-  "Pass the protocol's USR from xcindex_find_symbol. " +
+  "Pass the protocol's USR from find_symbol. " +
   "More reliable than searching for ': ProtocolName' in source — handles type aliases and " +
   "retroactive conformances declared in other files.",
   {
@@ -258,11 +258,11 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_blast_radius
+// Tool: blast_radius
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_blast_radius",
+  "blast_radius",
   "Given a source file path, return the minimal set of files you need to read before " +
   "editing it: direct dependents (files that call its symbols), one hop of transitive " +
   "callers, and the covering test files. " +
@@ -317,11 +317,11 @@ server.tool(
 );
 
 // ---------------------------------------------------------------------------
-// Tool: xcindex_status
+// Tool: status
 // ---------------------------------------------------------------------------
 
 server.tool(
-  "xcindex_status",
+  "status",
   "Check the freshness of the Xcode index for a project. " +
   "Returns the index store path, last-build timestamp, and whether any source files " +
   "edited this session are newer than the index. " +
@@ -340,7 +340,6 @@ server.tool(
       return { content: [{ type: "text", text: "No status data returned." }] };
     }
 
-    const { getEditedFiles } = await import("./freshness.js");
     const editedFiles = [...getEditedFiles()];
 
     const lines: string[] = [

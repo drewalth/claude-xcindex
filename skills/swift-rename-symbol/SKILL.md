@@ -23,7 +23,7 @@ description: Use when the user explicitly asks to rename a Swift symbol, method,
 **Delegate to the `swift-refactor-specialist` subagent.** Do not do the rename
 in the main session — you'll fill your context with 50 file reads.
 
-The subagent has `xcindex_*` tools, `Read`, and `Edit`. It will:
+The subagent has the xcindex tools (`find_symbol`, `find_references`, `find_definition`, `find_overrides`, `blast_radius`) plus `Read` and `Edit`. It will:
 1. Find all reference sites
 2. Edit each site atomically
 3. Return a short summary: N files changed, list of edit sites
@@ -35,17 +35,17 @@ In the main session:
 
 # Rename workflow (what the subagent does)
 
-1. `xcindex_find_symbol(symbolName: "OldName")` → USR + definition location
+1. `find_symbol(symbolName: "OldName")` → USR + definition location
 2. Confirm USR is correct (right kind, right module)
-3. `xcindex_find_references(symbolName: "OldName")` → all occurrence sites
+3. `find_references(symbolName: "OldName")` → all occurrence sites
 4. For each site: `Edit` to replace `OldName` with `NewName` at the exact line
 5. Handle the definition site last (may be a different replacement e.g. class name vs func body)
 6. Return summary
 
 # Edge cases
 
-- **Overloads**: `xcindex_find_symbol` returns multiple USRs → ask which one to rename
-- **@objc bridging**: `xcindex_find_references` with `.dynamic` role flags dynamic dispatch sites
+- **Overloads**: `find_symbol` returns multiple USRs → ask which one to rename
+- **@objc bridging**: `find_references` with `.dynamic` role flags dynamic dispatch sites
 - **Extensions in other files**: the index includes extension references; check `containedBy` roles
 - **Test doubles / mocks**: check `coveringTests` via blast radius to ensure mocks are updated
 

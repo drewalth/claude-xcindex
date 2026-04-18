@@ -131,13 +131,31 @@ const SWIFT_BINARY_DEBUG = path.join(
 
 export class SwiftBridge {
   private proc: ChildProcess | null = null;
+  /**
+   * Serialized request queue. Each request enqueues a {resolve} entry; the
+   * stdin write and response wait happen strictly in FIFO order, so concurrent
+   * callers never interleave their stdin payloads (which would desync the
+   * line-oriented protocol on the Swift side).
+   */
+  private queue: Promise<void> = Promise.resolve();
   private pendingResolvers: Array<(response: SwiftResponse) => void> = [];
-  private lineBuffer = "";
 
   /** Send a request and wait for the single-line JSON response. */
   async send(request: SwiftRequest): Promise<SwiftResponse> {
-    const proc = await this.ensureProcess();
+    // Chain onto the queue: every send waits for the previous one to
+    // finish writing and receive its response before starting.
+    const result = this.queue.then(() => this.sendOne(request));
+    // Update queue to the next boundary, swallowing errors so one failure
+    // doesn't poison subsequent requests.
+    this.queue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
 
+  private async sendOne(request: SwiftRequest): Promise<SwiftResponse> {
+    const proc = await this.ensureProcess();
     return new Promise((resolve) => {
       this.pendingResolvers.push(resolve);
       const line = JSON.stringify(request) + "\n";
@@ -146,13 +164,19 @@ export class SwiftBridge {
   }
 
   private async ensureProcess(): Promise<ChildProcess> {
-    if (this.proc && !this.proc.killed) {
+    if (this.proc && !this.proc.killed && this.proc.exitCode === null) {
       return this.proc;
     }
 
     // Prefer release build, fall back to debug
     const { existsSync } = await import("node:fs");
     const bin = existsSync(SWIFT_BINARY) ? SWIFT_BINARY : SWIFT_BINARY_DEBUG;
+
+    if (!existsSync(bin)) {
+      const msg = `xcindex Swift binary not found at ${bin}. Run './build.sh' from the plugin root.`;
+      process.stderr.write(`[xcindex] ${msg}\n`);
+      throw new Error(msg);
+    }
 
     const proc = spawn(bin, [], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -162,14 +186,29 @@ export class SwiftBridge {
       process.stderr.write(`[xcindex swift] ${chunk.toString()}`);
     });
 
-    proc.on("exit", (code) => {
-      if (code !== 0) {
-        process.stderr.write(`[xcindex swift] process exited with code ${code}\n`);
-      }
-      // Reject any pending promises so callers don't hang
+    // Handle spawn failures (binary missing, permission denied, etc.)
+    // Without this, `send()` would hang forever.
+    proc.on("error", (err) => {
+      process.stderr.write(`[xcindex swift] spawn error: ${err.message}\n`);
       const resolvers = this.pendingResolvers.splice(0);
       for (const resolve of resolvers) {
-        resolve({ error: `Swift service exited unexpectedly (code ${code})` });
+        resolve({ error: `Swift service failed to start: ${err.message}` });
+      }
+      this.proc = null;
+    });
+
+    proc.on("exit", (code, signal) => {
+      if (code !== 0 && code !== null) {
+        process.stderr.write(`[xcindex swift] process exited with code ${code}\n`);
+      }
+      // Drain any pending promises so callers don't hang
+      const resolvers = this.pendingResolvers.splice(0);
+      for (const resolve of resolvers) {
+        resolve({
+          error: signal
+            ? `Swift service terminated by signal ${signal}`
+            : `Swift service exited unexpectedly (code ${code})`,
+        });
       }
       this.proc = null;
     });
@@ -201,7 +240,23 @@ export class SwiftBridge {
 
   /** Gracefully terminate the Swift subprocess. */
   dispose(): void {
-    this.proc?.stdin?.end();
+    const proc = this.proc;
     this.proc = null;
+    if (!proc) return;
+
+    proc.stdin?.end();
+    // If it doesn't exit promptly on its own, SIGTERM then SIGKILL.
+    // The Swift binary's stdio loop exits when stdin closes, but we defend
+    // against any handler that might block on IndexStoreDB cleanup.
+    const term = setTimeout(() => {
+      if (proc.exitCode === null && !proc.killed) proc.kill("SIGTERM");
+    }, 500);
+    const kill = setTimeout(() => {
+      if (proc.exitCode === null && !proc.killed) proc.kill("SIGKILL");
+    }, 2000);
+    proc.on("exit", () => {
+      clearTimeout(term);
+      clearTimeout(kill);
+    });
   }
 }
