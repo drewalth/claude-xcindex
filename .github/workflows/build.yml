@@ -69,8 +69,6 @@ jobs:
           npx
           --package semantic-release
           --package @semantic-release/exec
-          --package @semantic-release/changelog
-          --package @semantic-release/git
           --package conventional-changelog-conventionalcommits
           -- semantic-release
 
