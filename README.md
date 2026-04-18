@@ -315,8 +315,7 @@ annotate stale results in its responses.
 **MCP tools don't appear in Claude Code.**
 Run `/plugin` to confirm the plugin is installed. If listed but tools are
 missing, check that `./build.sh` completed without errors — specifically,
-that `mcp/dist/server.js` and `mcp/swift-service/.build/release/xcindex`
-both exist.
+that `service/.build/release/xcindex` exists and is executable.
 
 **Custom DerivedData location.**
 The plugin reads `IDECustomDerivedDataLocation` from Xcode's preferences
@@ -326,8 +325,8 @@ will report where it looked.
 ## Development
 
 ```sh
-./build.sh --debug          # debug build, both layers
-cd mcp && npm run dev       # watch TypeScript
+./build.sh --debug                       # debug build
+cd service && swift test                 # run tests
 ```
 
 Layout:
@@ -336,9 +335,7 @@ Layout:
 claude-xcindex/
 ├── .claude-plugin/plugin.json     # Claude Code plugin manifest
 ├── .mcp.json                      # MCP server registration
-├── mcp/
-│   ├── src/                       # TypeScript MCP server
-│   └── swift-service/             # Swift CLI wrapping IndexStoreDB
+├── service/                       # Swift MCP server (IndexStoreDB + swift-sdk)
 ├── skills/                        # swift-find-references, blast-radius, rename
 ├── agents/swift-refactor-specialist.md
 ├── commands/xcindex-status.md

@@ -16,13 +16,5 @@
     "indexstore",
     "refactoring",
     "navigation"
-  ],
-  "mcp_servers": {
-    "xcindex": {
-      "command": "node",
-      "args": [
-        "${plugin_dir}/mcp/dist/server.js"
-      ]
-    }
-  }
+  ]
 }

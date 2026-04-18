@@ -1,8 +1,2 @@
 # Swift build output
-mcp/swift-service/.build/
-
-# Node
-mcp/node_modules/
-mcp/dist/
-mcp/package-lock.json
-node_modules/
+service/.build/
