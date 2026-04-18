@@ -24,20 +24,16 @@ ensure_binary() {
         return 0
     fi
 
-    # Otherwise, download the release asset matching this plugin version.
-    local version
-    version=$(grep -m1 '"version"' "${PLUGIN_ROOT}/.claude-plugin/plugin.json" \
-        | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
-    if [[ -z "$version" ]]; then
-        echo "[xcindex] ERROR: cannot read version from plugin.json" >&2
-        return 1
-    fi
-
-    local url="https://github.com/drewalth/claude-xcindex/releases/download/v${version}/xcindex"
+    # Otherwise, download the asset from the latest GitHub release. The
+    # /releases/latest/download/ URL is stable and always redirects to
+    # whatever the most recent published release has as an asset — so
+    # bin/run doesn't need to parse plugin.json or stay in lockstep with
+    # any particular version tag.
+    local url="https://github.com/drewalth/claude-xcindex/releases/latest/download/xcindex"
     local tmp="${BIN_DIR}/xcindex.download.$$"
 
     mkdir -p "$BIN_DIR"
-    echo "[xcindex] Downloading xcindex v${version} (first launch)..." >&2
+    echo "[xcindex] Downloading xcindex (first launch)..." >&2
     if curl -fL --max-time 60 -o "$tmp" "$url" 2>/dev/null; then
         chmod +x "$tmp"
         mv "$tmp" "$BINARY"
