@@ -349,8 +349,8 @@ claude-xcindex/
 └── build.sh                       # convenience wrapper for swift build -c release
 ```
 
-Pull requests welcome. Please open an issue to discuss architectural changes
-before submitting.
+Pull requests welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+Please open an issue to discuss architectural changes before submitting.
 
 ## Prior art
 
