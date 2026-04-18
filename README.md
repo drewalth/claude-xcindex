@@ -1,6 +1,8 @@
-# claude-xcindex
+![Hero](./assets/hero.png)
 
-> **An MCP bridge to Xcode's SourceKit symbol index for Claude Code.** USR-based references, overrides, conformances, and blast-radius queries via `indexstore-db` — the same library SourceKit-LSP uses.
+#### An MCP bridge to Xcode's SourceKit symbol index for Claude Code. USR-based references, overrides, conformances, and blast-radius queries via `indexstore-db` — the same library SourceKit-LSP uses.
+
+---
 
 A [Claude Code](https://claude.com/claude-code) plugin that gives Claude
 semantic access to Xcode's on-disk symbol index so refactors, reference
@@ -119,7 +121,7 @@ Builds are **never** triggered automatically. Hooks warn, they don't act.
 ### 1. Clone and build
 
 ```sh
-git clone https://github.com/<your-username>/claude-xcindex.git
+git clone https://github.com/drewalth/claude-xcindex.git
 cd claude-xcindex
 ./build.sh
 ```
