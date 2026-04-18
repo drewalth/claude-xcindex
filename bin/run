@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Launcher for the xcindex MCP server. Called by Claude Code via .mcp.json.
+#
+# Responsibilities:
+#   1. Ensure bin/xcindex (the Swift binary) is present. On first run we
+#      either symlink a from-source build (contributors) or download the
+#      matching release binary from GitHub.
+#   2. Exec into the binary, preserving stdin/stdout so MCP stdio works.
+
+set -euo pipefail
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+BIN_DIR="${PLUGIN_ROOT}/bin"
+BINARY="${BIN_DIR}/xcindex"
+
+ensure_binary() {
+    # Already cached.
+    [[ -x "$BINARY" ]] && return 0
+
+    # Contributor path: a from-source build lives in service/.build/release.
+    local source_build="${PLUGIN_ROOT}/service/.build/release/xcindex"
+    if [[ -x "$source_build" ]]; then
+        ln -sf "$source_build" "$BINARY"
+        return 0
+    fi
+
+    # Otherwise, download the release asset matching this plugin version.
+    local version
+    version=$(grep -m1 '"version"' "${PLUGIN_ROOT}/.claude-plugin/plugin.json" \
+        | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+    if [[ -z "$version" ]]; then
+        echo "[xcindex] ERROR: cannot read version from plugin.json" >&2
+        return 1
+    fi
+
+    local url="https://github.com/drewalth/claude-xcindex/releases/download/v${version}/xcindex"
+    local tmp="${BIN_DIR}/xcindex.download.$$"
+
+    mkdir -p "$BIN_DIR"
+    echo "[xcindex] Downloading xcindex v${version} (first launch)..." >&2
+    if curl -fL --max-time 60 -o "$tmp" "$url" 2>/dev/null; then
+        chmod +x "$tmp"
+        mv "$tmp" "$BINARY"
+        return 0
+    fi
+
+    rm -f "$tmp"
+    echo "[xcindex] Download failed: $url" >&2
+    echo "[xcindex] Run /xcindex-setup to build from source as a fallback." >&2
+    return 1
+}
+
+ensure_binary || exit 1
+exec "$BINARY" "$@"

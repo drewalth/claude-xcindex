@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "xcindex": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/service/.build/release/xcindex"
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/run"
     }
   }
 }
