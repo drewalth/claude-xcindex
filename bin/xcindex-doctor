@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# xcindex-doctor: first-run / troubleshooting diagnostic for claude-xcindex.
+#
+# Checks, in order:
+#   1. Xcode is installed and selected.
+#   2. `libIndexStore.dylib` is reachable from xcrun.
+#   3. `swiftc` is on the path (required to build from source).
+#   4. The xcindex binary is present and executable.
+#   5. An Xcode project can be located (either via `--project` or by
+#      scanning the current working directory).
+#   6. The index store for that project exists under DerivedData.
+#   7. Source files are not newer than the index (freshness).
+#
+# Each check prints `[ OK ]` or `[FAIL]` with a remediation hint. Exits
+# with status 0 if all checks pass, 1 otherwise.
+#
+# Usage:
+#   bin/xcindex-doctor                           # auto-detect project
+#   bin/xcindex-doctor --project path/to/Foo.xcodeproj
+#   bin/xcindex-doctor --project path/to/Foo.xcworkspace
+
+set -uo pipefail
+
+# -------- config ------------------------------------------------------------
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+PROJECT=""
+EXIT=0
+
+# -------- args --------------------------------------------------------------
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --project) PROJECT="${2:-}"; shift 2 ;;
+        -h|--help)
+            sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+# -------- formatting --------------------------------------------------------
+
+green() { printf '\033[32m%s\033[0m' "$1"; }
+red()   { printf '\033[31m%s\033[0m' "$1"; }
+dim()   { printf '\033[2m%s\033[0m'  "$1"; }
+
+pass() { echo "  [$(green ' OK ')] $1"; }
+fail() { echo "  [$(red  'FAIL')] $1"; [[ -n "${2:-}" ]] && echo "          $(dim "→ $2")"; EXIT=1; }
+info() { echo "  [$(dim 'INFO')] $1"; }
+section() { echo; echo "== $1 =="; }
+
+# -------- checks ------------------------------------------------------------
+
+section "Xcode"
+
+if ! command -v xcode-select >/dev/null 2>&1; then
+    fail "xcode-select not found." "Install Xcode from the App Store."
+else
+    if xcode_dir=$(xcode-select -p 2>/dev/null); then
+        pass "Xcode selected: $xcode_dir"
+    else
+        fail "No Xcode selected." "Run: sudo xcode-select -s /Applications/Xcode.app"
+    fi
+fi
+
+if command -v xcodebuild >/dev/null 2>&1; then
+    xb_version=$(xcodebuild -version 2>/dev/null | head -1)
+    pass "$xb_version"
+else
+    fail "xcodebuild not on PATH." "Install Xcode command line tools: xcode-select --install"
+fi
+
+# -------- libIndexStore -----------------------------------------------------
+
+section "libIndexStore"
+
+lib_path=""
+if clang_path=$(xcrun --find clang 2>/dev/null); then
+    # clang is at .../usr/bin/clang; the dylib lives at .../usr/lib/libIndexStore.dylib
+    lib_candidate="$(dirname "$(dirname "$clang_path")")/lib/libIndexStore.dylib"
+    if [[ -f "$lib_candidate" ]]; then
+        lib_path="$lib_candidate"
+    fi
+fi
+
+if [[ -z "$lib_path" ]]; then
+    for fallback in \
+        /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib \
+        /Applications/Xcode.app/Contents/SharedFrameworks/IndexStore.framework/Versions/A/IndexStore \
+        /Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib
+    do
+        [[ -f "$fallback" ]] && { lib_path="$fallback"; break; }
+    done
+fi
+
+if [[ -n "$lib_path" ]]; then
+    pass "libIndexStore: $lib_path"
+else
+    fail "libIndexStore.dylib not found." "Reinstall Xcode, or run: sudo xcode-select -s /Applications/Xcode.app"
+fi
+
+# -------- swiftc ------------------------------------------------------------
+
+section "swiftc"
+
+if swiftc_path=$(xcrun --find swiftc 2>/dev/null); then
+    swiftc_version=$("$swiftc_path" --version 2>/dev/null | head -1)
+    pass "$swiftc_version"
+else
+    fail "swiftc not found via xcrun." "Install Xcode command line tools: xcode-select --install"
+fi
+
+# -------- xcindex binary ----------------------------------------------------
+
+section "xcindex binary"
+
+binary="${PLUGIN_ROOT}/bin/xcindex"
+if [[ -x "$binary" ]]; then
+    pass "Binary present: $binary"
+else
+    source_build="${PLUGIN_ROOT}/service/.build/release/xcindex"
+    if [[ -x "$source_build" ]]; then
+        info "Source build at $source_build — bin/run will symlink it on next launch."
+    else
+        fail "No xcindex binary yet." "Run ./build.sh, or let bin/run download one on first launch."
+    fi
+fi
+
+# -------- project -----------------------------------------------------------
+
+section "Xcode project"
+
+if [[ -z "$PROJECT" ]]; then
+    # Scan CWD and one level up, prefer .xcworkspace.
+    for d in "$(pwd)" "$(dirname "$(pwd)")"; do
+        for ext in xcworkspace xcodeproj; do
+            found=$(find "$d" -maxdepth 2 -name "*.$ext" ! -path "*/Pods/*" ! -path "*/.git/*" 2>/dev/null | head -1)
+            if [[ -n "$found" ]]; then
+                PROJECT="$found"
+                break 2
+            fi
+        done
+    done
+fi
+
+if [[ -z "$PROJECT" ]]; then
+    info "No .xcodeproj or .xcworkspace found near CWD — pass --project <path> to check index freshness."
+    echo
+    [[ $EXIT -eq 0 ]] && echo "All environment checks passed." || echo "Some checks failed; see above."
+    exit $EXIT
+fi
+
+pass "Project: $PROJECT"
+
+# -------- index store -------------------------------------------------------
+
+section "Index store"
+
+project_name=$(basename "$PROJECT" | sed 's/\.[^.]*$//')
+dd_base="$HOME/Library/Developer/Xcode/DerivedData"
+custom=$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation 2>/dev/null || true)
+[[ -n "$custom" ]] && dd_base="$custom"
+
+dd_dir=$(ls -dt "${dd_base}/${project_name}-"* 2>/dev/null | head -1)
+
+if [[ -z "$dd_dir" ]]; then
+    fail "No DerivedData folder for '$project_name' under $dd_base." \
+         "Open the project in Xcode and build it at least once (Cmd+B)."
+    echo
+    echo "Some checks failed; see above."
+    exit 1
+fi
+
+index_store="${dd_dir}/Index.noindex/DataStore"
+if [[ ! -d "$index_store" ]]; then
+    fail "DerivedData folder exists but has no Index.noindex/DataStore." \
+         "Build with indexing enabled. In Xcode: Settings → General → Indexing."
+    echo
+    echo "Some checks failed; see above."
+    exit 1
+fi
+
+index_mtime_human=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$index_store" 2>/dev/null || echo "unknown")
+pass "Index store: $index_store"
+pass "Last indexed: $index_mtime_human"
+
+# -------- freshness ---------------------------------------------------------
+
+section "Freshness"
+
+index_epoch=$(stat -f "%m" "$index_store" 2>/dev/null || echo 0)
+project_dir=$(dirname "$PROJECT")
+stale=0
+while IFS= read -r -d '' f; do
+    file_epoch=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
+    (( file_epoch > index_epoch )) && stale=$((stale + 1))
+done < <(find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
+
+if (( stale == 0 )); then
+    pass "No Swift files newer than the index."
+else
+    fail "$stale Swift file(s) newer than the index." \
+         "Build the project in Xcode to refresh, or expect stale results from xcindex_* queries."
+fi
+
+# -------- summary -----------------------------------------------------------
+
+echo
+if [[ $EXIT -eq 0 ]]; then
+    echo "$(green 'All checks passed.') You're ready to use xcindex_* tools in Claude Code."
+else
+    echo "$(red 'Some checks failed.') See remediation hints above."
+fi
+exit $EXIT

@@ -138,10 +138,14 @@ and queries `IndexStoreDB` — the same library SourceKit-LSP uses. No
 Node runtime, no intermediate process: Claude Code spawns the binary,
 the binary talks to the index.
 
+For the full mental model — freshness, DerivedData resolution, USR-first
+lookups, what the index doesn't cover — see [docs/how-it-works.md](docs/how-it-works.md).
+
 ### MCP tool surface
 
 Exposed under the `mcp__xcindex__*` namespace. All tools are semantic — they
-match symbols, not text.
+match symbols, not text. See [docs/tools-reference.md](docs/tools-reference.md)
+for signatures, example inputs, and example responses.
 
 | Tool | Purpose |
 |---|---|
@@ -215,6 +219,16 @@ DerivedData.
 
 Verify anytime with `/plugin` (should list `claude-xcindex`) and
 `/xcindex-status` (reports the resolved index path and freshness).
+
+If something's not working, run the diagnostic:
+
+```sh
+./bin/xcindex-doctor
+```
+
+It checks your Xcode install, libIndexStore, the cached binary, and
+index freshness line-by-line. See [docs/troubleshooting.md](docs/troubleshooting.md)
+for the most common failure modes.
 
 ### Install from source
 
@@ -304,6 +318,10 @@ freshness annotations when Claude has edited files since the last build.
 Install alongside `claude-xcindex` — they don't overlap.
 
 ## Troubleshooting
+
+> The fastest fix: run `./bin/xcindex-doctor`. It reports pass/fail per
+> check with remediation hints. For the full catalog, see
+> [docs/troubleshooting.md](docs/troubleshooting.md).
 
 **"No Xcode index found for `<project>`."**
 Build the project in Xcode (Cmd+B) at least once. The plugin reads the index
