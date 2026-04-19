@@ -177,9 +177,9 @@ project. Pair it with:
 ### Anthropic's [`swift-lsp`](https://claude.com/plugins/swift-lsp)
 
 Live LSP features (completion, diagnostics, hover) backed by
-SourceKit-LSP. Different layer: `swift-lsp` queries a running server
-over live source; `claude-xcindex` reads the on-disk index Xcode wrote
-at build time. They don't overlap.
+SourceKit-LSP. Different layer: `swift-lsp` is an editor-UI integration
+(no MCP tools the agent can call); `claude-xcindex` exposes semantic
+queries to the agent loop. They don't overlap.
 
 | | `swift-lsp` | `claude-xcindex` |
 |---|---|---|
@@ -188,6 +188,7 @@ at build time. They don't overlap.
 | Requires Xcode build? | No | Yes (once) |
 | Diagnostics & completion | Yes | No |
 | Hover / jump-to-definition | Yes | Definition only |
+| Agent-callable MCP tools | No (editor-UI only) | 7 tools |
 | Overrides / conformances / blast-radius | Not first-class | Yes |
 | Works on Linux / SwiftPM-only | Yes | No (DerivedData-specific) |
 | Warm query latency | LSP round-trip | sub-millisecond |
@@ -197,6 +198,26 @@ at build time. They don't overlap.
 
 - Apple's [`mcpbridge`](https://developer.apple.com/documentation/xcode) (ships with Xcode 26.3+) for build, test, preview, docs.
 - [`XcodeBuildMCP`](https://github.com/cameroncooke/XcodeBuildMCP) for older Xcode versions.
+
+## 🆚 Other Swift symbol tools
+
+If you've already looked at the broader Swift-MCP space, here's where
+`claude-xcindex` sits relative to the closest neighbours:
+
+| | `claude-xcindex` | [`block/xcode-index-mcp`](https://github.com/block/xcode-index-mcp) | [SwiftLens](https://github.com/swiftlens/swiftlens) |
+|---|---|---|---|
+| Backend | `indexstore-db` (direct) | `indexstore-db` (direct) | SourceKit-LSP |
+| Packaging | Claude Code plugin (skills + hooks + subagent) | Raw MCP server | Raw MCP server |
+| Runtime | Native Swift binary | Python (`uv`) + Swift service | Python 3.10+ |
+| MCP tools | 7 (find_symbol, find_references, find_definition, find_overrides, find_conformances, blast_radius, status) | 4 (load_index, symbol_occurrences, get_occurrences, search_pattern) | 15 (single-file analysis + cross-file refs/defs) |
+| Overrides / conformances | Yes | No | No |
+| Blast-radius analysis | Yes | No | No |
+| Freshness warnings | Hook-driven, per-session | None | None |
+| Status (Apr 2026) | Active | Active (~55⭐) | **Archived 2026-03-10** |
+
+`block/xcode-index-mcp` is the closest prior art — same backend, narrower
+tool surface, no plugin packaging. SwiftLens covered the same niche from
+the SourceKit-LSP angle but [was archived in March 2026](https://github.com/swiftlens/swiftlens).
 
 ## 🩺 Troubleshooting
 
