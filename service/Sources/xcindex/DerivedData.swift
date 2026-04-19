@@ -10,9 +10,15 @@ import Foundation
 ///  4. Among matches, return the one most recently modified.
 ///  5. Append `Index.noindex/DataStore`.
 enum DerivedDataLocator {
+    /// - Parameter derivedDataBaseOverride: Override the DerivedData
+    ///   directory used for scanning. Defaults to the user's Xcode
+    ///   preference or ~/Library/Developer/Xcode/DerivedData. Exists so
+    ///   unit tests can point at a fixture directory under `$TMPDIR`
+    ///   instead of the real one.
     static func indexStorePath(
         projectPath: String?,
-        indexStorePath: String?
+        indexStorePath: String?,
+        derivedDataBaseOverride: URL? = nil
     ) throws -> String {
         if let explicit = indexStorePath, !explicit.isEmpty {
             return explicit
@@ -30,7 +36,9 @@ enum DerivedDataLocator {
         }
 
         let derivedDataBase: URL
-        if let custom = customDerivedDataPath() {
+        if let override = derivedDataBaseOverride {
+            derivedDataBase = override
+        } else if let custom = customDerivedDataPath() {
             derivedDataBase = URL(fileURLWithPath: custom)
         } else {
             let home = FileManager.default.homeDirectoryForCurrentUser
@@ -96,10 +104,10 @@ enum DerivedDataLocator {
                 return "Could not derive project name from path: \(p)"
             case .noDerivedData(let name, let base):
                 return "No DerivedData folder found for '\(name)' under \(base). " +
-                       "Build the project in Xcode first."
+                    "Build the project in Xcode first."
             case .noIndexStore(let folder):
                 return "DerivedData folder '\(folder)' exists but has no " +
-                       "Index.noindex/DataStore — build with indexing enabled."
+                    "Index.noindex/DataStore — build with indexing enabled."
             }
         }
     }
