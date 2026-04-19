@@ -58,17 +58,17 @@ private enum Schema {
         return .object(obj)
     }
 
-    // Shared project/index-store params every tool accepts.
+    /// Shared project/index-store params every tool accepts.
     static var projectParams: [String: Value] {
         [
             "projectPath": string(
                 "Absolute path to the .xcodeproj or .xcworkspace file. " +
-                "Used to locate DerivedData automatically. " +
-                "Omit if you supply indexStorePath directly."
+                    "Used to locate DerivedData automatically. " +
+                    "Omit if you supply indexStorePath directly."
             ),
             "indexStorePath": string(
                 "Absolute path to the IndexStore DataStore directory. " +
-                "Overrides projectPath. Use status to find this path."
+                    "Overrides projectPath. Use status to find this path."
             ),
         ]
     }
@@ -90,7 +90,7 @@ private enum ToolDefinitions {
     static let findReferences = Tool(
         name: "find_references",
         description:
-            "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
+        "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
             "Returns exact file+line+column+role for each reference — no false positives from " +
             "comments, strings, or same-named symbols in other modules. " +
             "Call find_symbol first if you need to disambiguate overloads. " +
@@ -99,13 +99,13 @@ private enum ToolDefinitions {
             properties: [
                 "symbolName": Schema.string(
                     "Exact name of the symbol to look up (e.g. 'UserService', 'fetchUser', 'AuthProtocol'). " +
-                    "Case-sensitive. Use the declaration name, not a qualified path."
+                        "Case-sensitive. Use the declaration name, not a qualified path."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
                 "indexStorePath": Schema.projectParams["indexStorePath"]!,
                 "maxResults": Schema.integer(
                     "Cap on the number of occurrences returned (default 100, max 500). " +
-                    "For very common symbols, increase only if you need the full picture.",
+                        "For very common symbols, increase only if you need the full picture.",
                     min: 1, max: 500, default: 100
                 ),
             ],
@@ -116,7 +116,7 @@ private enum ToolDefinitions {
     static let findSymbol = Tool(
         name: "find_symbol",
         description:
-            "Look up a symbol by name and return its kind, language, USR, and definition location. " +
+        "Look up a symbol by name and return its kind, language, USR, and definition location. " +
             "Use this BEFORE find_references or find_definition to disambiguate " +
             "overloaded names (e.g. multiple types named 'Delegate' in different modules). " +
             "Returns one result per distinct symbol that exactly matches the name.",
@@ -124,7 +124,7 @@ private enum ToolDefinitions {
             properties: [
                 "symbolName": Schema.string(
                     "Exact symbol name to look up (case-sensitive). " +
-                    "E.g. 'URLSession', 'fetchUser', 'AuthDelegate'."
+                        "E.g. 'URLSession', 'fetchUser', 'AuthDelegate'."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
                 "indexStorePath": Schema.projectParams["indexStorePath"]!,
@@ -136,7 +136,7 @@ private enum ToolDefinitions {
     static let findDefinition = Tool(
         name: "find_definition",
         description:
-            "Return the canonical definition site (file + line) for a symbol identified by USR. " +
+        "Return the canonical definition site (file + line) for a symbol identified by USR. " +
             "Use after find_symbol to jump to the declaration. " +
             "More precise than text search because it uses the semantic USR, not the symbol name.",
         inputSchema: Schema.object(
@@ -152,7 +152,7 @@ private enum ToolDefinitions {
     static let findOverrides = Tool(
         name: "find_overrides",
         description:
-            "Find all classes or structs that override a given method or property. " +
+        "Find all classes or structs that override a given method or property. " +
             "Essential before changing a method signature in a base class. " +
             "Pass the USR from find_symbol for the base method.",
         inputSchema: Schema.object(
@@ -168,7 +168,7 @@ private enum ToolDefinitions {
     static let findConformances = Tool(
         name: "find_conformances",
         description:
-            "Find all types that conform to a Swift protocol. " +
+        "Find all types that conform to a Swift protocol. " +
             "Pass the protocol's USR from find_symbol. " +
             "More reliable than searching for ': ProtocolName' in source — handles type aliases and " +
             "retroactive conformances declared in other files.",
@@ -185,7 +185,7 @@ private enum ToolDefinitions {
     static let blastRadius = Tool(
         name: "blast_radius",
         description:
-            "Given a source file path, return the minimal set of files you need to read before " +
+        "Given a source file path, return the minimal set of files you need to read before " +
             "editing it: direct dependents (files that call its symbols), one hop of transitive " +
             "callers, and the covering test files. " +
             "Call this BEFORE reading files when the user asks 'what does this file affect?' or " +
@@ -195,7 +195,7 @@ private enum ToolDefinitions {
             properties: [
                 "filePath": Schema.string(
                     "Absolute path to the Swift/ObjC source file to analyse. " +
-                    "E.g. '/Users/me/MyApp/Sources/AuthService.swift'."
+                        "E.g. '/Users/me/MyApp/Sources/AuthService.swift'."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
                 "indexStorePath": Schema.projectParams["indexStorePath"]!,
@@ -207,7 +207,7 @@ private enum ToolDefinitions {
     static let status = Tool(
         name: "status",
         description:
-            "Check the freshness of the Xcode index for a project. " +
+        "Check the freshness of the Xcode index for a project. " +
             "Returns the index store path, last-build timestamp, and whether any source files " +
             "edited this session are newer than the index. " +
             "Call this first if you suspect the index is stale, or at session start when working " +

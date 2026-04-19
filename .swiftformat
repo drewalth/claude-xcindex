@@ -1,0 +1,34 @@
+# Configuration for nicklockwood/SwiftFormat (`brew install swiftformat`).
+# CI runs `swiftformat --lint .` in check mode; locally use
+# `swiftformat .` to auto-fix.
+#
+# Starting posture: catch hygiene issues (trailing whitespace, tabs,
+# duplicate imports) without forcing a mechanical reformat of the
+# existing codebase. Rules can be ratcheted up over time.
+
+--swiftversion 6.1
+--indent 4
+
+# Exclusions: build output, test fixture (intentionally minimal),
+# and any pre-consolidation artifacts.
+--exclude .build
+--exclude service/.build
+--exclude service/Tests/Fixtures
+--exclude mcp
+
+# Explicit opt-outs from the default rule set. These are style choices
+# the existing code doesn't follow — re-enabling them should be a
+# deliberate reformat PR, not a surprise from the linter.
+--disable blankLinesAroundMark
+--disable wrap
+--disable wrapMultilineStatementBraces
+--disable wrapLoopBodies
+--disable trailingCommas
+--disable preferKeyPath
+--disable redundantSelf
+--disable redundantType
+--disable hoistPatternLet
+--disable sortImports
+--disable elseOnSameLine
+--disable redundantReturn
+--disable strongifiedSelf
