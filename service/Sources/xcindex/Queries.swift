@@ -186,25 +186,47 @@ final class IndexQuerier {
 
     /// Return all types that conform to the protocol identified by `usr`.
     ///
-    /// Uses the `baseOf` relation — conforming types have a `baseOf` relation
-    /// pointing to the protocol's USR.
+    /// Swift's IndexStoreDB does not record a direct class→protocol
+    /// relation; conformance is only recorded as a per-method
+    /// `.overrideOf` relation from each witness to the corresponding
+    /// protocol requirement. To enumerate conforming types we:
+    ///   1. Collect the protocol's requirements (children of the
+    ///      protocol USR via `.childOf`).
+    ///   2. For each requirement, find the overriding witnesses via
+    ///      `.overrideOf`.
+    ///   3. From each witness occurrence, walk its relations to find
+    ///      the enclosing type (`.childOf`) — that's the conforming
+    ///      type.
+    ///   4. Return one OccurrenceResult per unique conforming type,
+    ///      located at the type's definition site.
     func findConformances(usr: String) -> [OccurrenceResult] {
-        let related = db.occurrences(relatedToUSR: usr, roles: [.baseOf])
-        var seen = Set<String>()
+        let requirements = db.occurrences(relatedToUSR: usr, roles: [.childOf])
+        let requirementUSRs = Set(requirements.map(\.symbol.usr))
+
+        var seenTypeUSRs = Set<String>()
         var results: [OccurrenceResult] = []
 
-        for occ in related {
-            guard !occ.location.isSystem else { continue }
-            let key = "\(occ.location.path):\(occ.location.line)"
-            guard seen.insert(key).inserted else { continue }
-            results.append(OccurrenceResult(
-                usr: occ.symbol.usr,
-                symbolName: occ.symbol.name,
-                path: occ.location.path,
-                line: occ.location.line,
-                column: occ.location.utf8Column,
-                roles: occ.roles.humanReadable
-            ))
+        for reqUSR in requirementUSRs {
+            let witnesses = db.occurrences(relatedToUSR: reqUSR, roles: [.overrideOf])
+            for witness in witnesses {
+                for relation in witness.relations where relation.roles.contains(.childOf) {
+                    let typeUSR = relation.symbol.usr
+                    guard seenTypeUSRs.insert(typeUSR).inserted else { continue }
+
+                    let defs = db.occurrences(ofUSR: typeUSR, roles: [.definition])
+                    guard let def = defs.first(where: { !$0.location.isSystem }) else {
+                        continue
+                    }
+                    results.append(OccurrenceResult(
+                        usr: typeUSR,
+                        symbolName: def.symbol.name,
+                        path: def.location.path,
+                        line: def.location.line,
+                        column: def.location.utf8Column,
+                        roles: def.roles.humanReadable
+                    ))
+                }
+            }
         }
 
         return results.sorted {
@@ -300,36 +322,36 @@ final class IndexQuerier {
 extension IndexSymbolKind {
     var kindDescription: String {
         switch self {
-        case .unknown:          return "unknown"
-        case .module:           return "module"
-        case .namespace:        return "namespace"
-        case .namespaceAlias:   return "namespaceAlias"
-        case .macro:            return "macro"
-        case .`enum`:           return "enum"
-        case .struct:           return "struct"
-        case .`class`:          return "class"
-        case .protocol:         return "protocol"
-        case .extension:        return "extension"
-        case .union:            return "union"
-        case .typealias:        return "typealias"
-        case .function:         return "function"
-        case .variable:         return "variable"
-        case .field:            return "field"
-        case .enumConstant:     return "enumCase"
-        case .instanceMethod:   return "instanceMethod"
-        case .classMethod:      return "classMethod"
-        case .staticMethod:     return "staticMethod"
+        case .unknown: return "unknown"
+        case .module: return "module"
+        case .namespace: return "namespace"
+        case .namespaceAlias: return "namespaceAlias"
+        case .macro: return "macro"
+        case .enum: return "enum"
+        case .struct: return "struct"
+        case .class: return "class"
+        case .protocol: return "protocol"
+        case .extension: return "extension"
+        case .union: return "union"
+        case .typealias: return "typealias"
+        case .function: return "function"
+        case .variable: return "variable"
+        case .field: return "field"
+        case .enumConstant: return "enumCase"
+        case .instanceMethod: return "instanceMethod"
+        case .classMethod: return "classMethod"
+        case .staticMethod: return "staticMethod"
         case .instanceProperty: return "instanceProperty"
-        case .classProperty:    return "classProperty"
-        case .staticProperty:   return "staticProperty"
-        case .constructor:      return "constructor"
-        case .destructor:       return "destructor"
+        case .classProperty: return "classProperty"
+        case .staticProperty: return "staticProperty"
+        case .constructor: return "constructor"
+        case .destructor: return "destructor"
         case .conversionFunction: return "conversionFunction"
-        case .parameter:        return "parameter"
-        case .using:            return "using"
-        case .concept:          return "concept"
-        case .commentTag:       return "commentTag"
-        @unknown default:       return "unknown"
+        case .parameter: return "parameter"
+        case .using: return "using"
+        case .concept: return "concept"
+        case .commentTag: return "commentTag"
+        @unknown default: return "unknown"
         }
     }
 }
@@ -339,9 +361,9 @@ extension IndexSymbolKind {
 extension Language {
     var languageDescription: String {
         switch self {
-        case .c:     return "c"
-        case .cxx:   return "c++"
-        case .objc:  return "objc"
+        case .c: return "c"
+        case .cxx: return "c++"
+        case .objc: return "objc"
         case .swift: return "swift"
         }
     }
@@ -378,8 +400,8 @@ private func xcrunDerivedToolchainPath() -> String? {
                     // clang is at .../usr/bin/clang; libIndexStore is at .../usr/lib/libIndexStore.dylib
                     let url = URL(fileURLWithPath: clang.trimmingCharacters(in: .whitespacesAndNewlines))
                     return url
-                        .deletingLastPathComponent()          // bin
-                        .deletingLastPathComponent()          // usr
+                        .deletingLastPathComponent() // bin
+                        .deletingLastPathComponent() // usr
                         .appendingPathComponent("lib/libIndexStore.dylib")
                         .path
                 }
@@ -426,24 +448,24 @@ func runCommand(_ path: String, args: [String]) -> String? {
 extension SymbolRole {
     var humanReadable: [String] {
         var names: [String] = []
-        if contains(.definition)        { names.append("definition") }
-        if contains(.declaration)       { names.append("declaration") }
-        if contains(.reference)         { names.append("reference") }
-        if contains(.call)              { names.append("call") }
-        if contains(.read)              { names.append("read") }
-        if contains(.write)             { names.append("write") }
-        if contains(.dynamic)           { names.append("dynamic") }
-        if contains(.addressOf)         { names.append("addressOf") }
-        if contains(.implicit)          { names.append("implicit") }
-        if contains(.overrideOf)        { names.append("overrideOf") }
-        if contains(.accessorOf)        { names.append("accessorOf") }
-        if contains(.childOf)           { names.append("childOf") }
-        if contains(.baseOf)            { names.append("baseOf") }
-        if contains(.extendedBy)        { names.append("extendedBy") }
-        if contains(.receivedBy)        { names.append("receivedBy") }
-        if contains(.calledBy)          { names.append("calledBy") }
-        if contains(.containedBy)       { names.append("containedBy") }
-        if contains(.specializationOf)  { names.append("specializationOf") }
+        if contains(.definition) { names.append("definition") }
+        if contains(.declaration) { names.append("declaration") }
+        if contains(.reference) { names.append("reference") }
+        if contains(.call) { names.append("call") }
+        if contains(.read) { names.append("read") }
+        if contains(.write) { names.append("write") }
+        if contains(.dynamic) { names.append("dynamic") }
+        if contains(.addressOf) { names.append("addressOf") }
+        if contains(.implicit) { names.append("implicit") }
+        if contains(.overrideOf) { names.append("overrideOf") }
+        if contains(.accessorOf) { names.append("accessorOf") }
+        if contains(.childOf) { names.append("childOf") }
+        if contains(.baseOf) { names.append("baseOf") }
+        if contains(.extendedBy) { names.append("extendedBy") }
+        if contains(.receivedBy) { names.append("receivedBy") }
+        if contains(.calledBy) { names.append("calledBy") }
+        if contains(.containedBy) { names.append("containedBy") }
+        if contains(.specializationOf) { names.append("specializationOf") }
         return names.isEmpty ? ["unknown"] : names
     }
 }
@@ -457,7 +479,7 @@ enum IndexQuerierError: LocalizedError {
         switch self {
         case .noIndexStoreLibrary:
             return "Could not locate IndexStore.framework. " +
-                   "Ensure Xcode is installed at /Applications/Xcode.app."
+                "Ensure Xcode is installed at /Applications/Xcode.app."
         }
     }
 }
