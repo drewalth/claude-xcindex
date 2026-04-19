@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & ideas
+    url: https://github.com/drewalth/claude-xcindex/discussions
+    about: Use Discussions for questions, usage help, or early-stage ideas. The issue tracker is for actionable bugs and feature requests.
+  - name: Security vulnerabilities
+    url: https://github.com/drewalth/claude-xcindex/security/advisories/new
+    about: Report security issues privately via GitHub's security advisories. See SECURITY.md for scope and response times.

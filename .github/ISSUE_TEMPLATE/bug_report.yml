@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in claude-xcindex isn't working as expected.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. Please fill in as
+        much as you can — the environment fields are especially helpful for
+        anything related to index freshness, DerivedData resolution, or
+        tool output.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: What did you expect, and what actually happened?
+      placeholder: |
+        Expected: `find_references` to return call sites of `fetchUser`.
+        Actually: returned "no results" even though the symbol is used.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal set of steps. If you can share a public repo that reproduces it, even better.
+      placeholder: |
+        1. Build `MyProject.xcodeproj` in Xcode.
+        2. In Claude Code, ask "find references to fetchUser".
+        3. Observe the tool call output.
+    validations:
+      required: true
+
+  - type: input
+    id: xcindex-version
+    attributes:
+      label: claude-xcindex version
+      description: Output of `/plugin` (the line for `claude-xcindex`), or the git SHA if installed from source.
+    validations:
+      required: true
+
+  - type: input
+    id: xcode-version
+    attributes:
+      label: Xcode version
+      description: Output of `xcodebuild -version` (first line is enough).
+      placeholder: "Xcode 16.2"
+    validations:
+      required: true
+
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "14.5 (23F79)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: status-output
+    attributes:
+      label: `/xcindex-status` output
+      description: Run `/xcindex-status` in Claude Code and paste the full response. Redact any paths you'd rather not share.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional context
+      description: Relevant log output, screenshots, stack traces, or anything else.
+    validations:
+      required: false

@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Swift Package Manager deps (indexstore-db, swift-sdk) are pinned
+  # deliberately — bumping them requires coordinated testing, so they
+  # stay manual. Only GitHub Actions are auto-updated here.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - ci
+    groups:
+      actions:
+        patterns:
+          - "*"

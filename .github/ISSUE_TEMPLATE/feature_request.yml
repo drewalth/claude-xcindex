@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest a new MCP tool, skill, hook, or other enhancement.
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: consider whether this is a use-case best served by an
+        existing tool (see the README's "MCP tool surface" table) or a new
+        capability. For larger proposals, please open a Discussion first so
+        we can align on direction before you invest in a PR.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you're trying to solve
+      description: What are you doing today, and what's painful about it?
+      placeholder: |
+        "When I ask Claude to find usages across a workspace with nested
+        projects, it only sees the top-level project's index."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: The shape of what you'd like — MCP tool signature, skill trigger, hook behavior, etc. Alternatives welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else have you tried or thought about?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope-check
+    attributes:
+      label: Scope check
+      options:
+        - label: This stays within the Swift/Xcode/IndexStoreDB surface (not a general-purpose LSP feature).
+        - label: I'm willing to help test or contribute toward this.
