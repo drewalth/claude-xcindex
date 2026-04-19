@@ -1,5 +1,10 @@
 # Swift build output
 service/.build/
+# The test fixture is a SwiftPM package; `swift build` may be run in it
+# during development. Its build artifacts and resolved manifest are
+# generated and should not be committed.
+service/Tests/Fixtures/**/.build/
+service/Tests/Fixtures/**/Package.resolved
 
 # semantic-release sentinel (created in CI only)
 .release-version
@@ -7,3 +12,7 @@ service/.build/
 # The xcindex binary is cached here at runtime by bin/run (never committed)
 bin/xcindex
 bin/xcindex.download.*
+
+# Pre-Swift-consolidation Node/TS implementation (removed in v1.x); guard
+# against accidental revival from stashes, old branches, or npm installs.
+mcp/
