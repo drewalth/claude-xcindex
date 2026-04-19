@@ -16,7 +16,11 @@
     "macos",
     "symbols",
     "indexstore",
+    "indexstore-db",
+    "sourcekit",
     "refactoring",
-    "navigation"
+    "navigation",
+    "mcp",
+    "claude-code"
   ]
 }
