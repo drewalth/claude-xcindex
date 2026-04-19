@@ -18,7 +18,7 @@ jobs:
     name: lint
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install SwiftFormat
         run: brew install swiftformat
@@ -30,13 +30,13 @@ jobs:
     name: build & test
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
 
       - name: Cache SwiftPM build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             service/.build
@@ -62,12 +62,12 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
 
