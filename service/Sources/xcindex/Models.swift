@@ -4,7 +4,7 @@ import Foundation
 
 struct Request: Codable {
     /// Operations: findRefs, findSymbol, findDefinition, findOverrides,
-    ///              findConformances, blastRadius, status
+    ///              findConformances, blastRadius, status, planRename
     let op: String
 
     /// Path to .xcodeproj or .xcworkspace — used for DerivedData discovery
@@ -21,6 +21,27 @@ struct Request: Codable {
 
     /// Source file path — used for blastRadius
     let filePath: String?
+
+    /// Proposed new identifier — used for planRename
+    let newName: String?
+
+    init(
+        op: String,
+        projectPath: String? = nil,
+        indexStorePath: String? = nil,
+        symbolName: String? = nil,
+        usr: String? = nil,
+        filePath: String? = nil,
+        newName: String? = nil
+    ) {
+        self.op = op
+        self.projectPath = projectPath
+        self.indexStorePath = indexStorePath
+        self.symbolName = symbolName
+        self.usr = usr
+        self.filePath = filePath
+        self.newName = newName
+    }
 }
 
 struct SymbolResult: Codable {
@@ -64,6 +85,7 @@ struct Response: Codable {
     var occurrences: [OccurrenceResult]?
     var status: StatusResult?
     var blastRadius: BlastRadiusResult?
+    var renamePlan: RenamePlan?
 
     init(error: String) {
         self.error = error
@@ -83,5 +105,9 @@ struct Response: Codable {
 
     init(blastRadius: BlastRadiusResult) {
         self.blastRadius = blastRadius
+    }
+
+    init(renamePlan: RenamePlan) {
+        self.renamePlan = renamePlan
     }
 }
