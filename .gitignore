@@ -16,3 +16,5 @@ bin/xcindex.download.*
 # Pre-Swift-consolidation Node/TS implementation (removed in v1.x); guard
 # against accidental revival from stashes, old branches, or npm installs.
 mcp/
+.DS_Store
+*.log
