@@ -73,16 +73,16 @@ struct RenamePlanner {
         }
 
         // 3. Resolve the definition. Used to derive oldName and detect
-        //    SDK / synthesized cases. Missing definition is not a
-        //    refusal — it means the USR is unknown to this index.
+        //    SDK / synthesized cases. Missing definition = refusal:
+        //    without a definition we can't classify ranges or stream
+        //    an audit trail, so emitting an empty plan would invite
+        //    the caller to treat "no ranges" as "nothing to rename"
+        //    rather than "we couldn't find this USR at all."
         guard let def = querier.findDefinition(usr: usr) else {
-            return RenamePlan(
+            return RenamePlan.refused(
                 usr: usr, oldName: "", newName: newName,
                 generatedAt: generatedAt, indexFreshness: freshness,
-                ranges: [],
-                summary: .zero,
-                refusal: nil,
-                warnings: ["usr_not_found"]
+                refusal: RefusalReason.usrNotFound(usr: usr).refusal()
             )
         }
         let oldName = def.symbolName
@@ -176,10 +176,14 @@ struct RenamePlanner {
         var tier: RenameTier = .greenIndexstore
 
         // Role → reason mapping (first reason is the primary classification).
+        // .overrideOf is used by IndexStoreDB for BOTH subclass overrides
+        // and protocol-witness declarations — disambiguate via the
+        // overridden symbol's enclosing kind (see Queries.findConformances
+        // for the authoritative witness recognition pattern).
         if occ.roles.contains(.overrideOf) {
-            reasons.append(.override)
+            reasons.append(isProtocolWitness(occ) ? .conformanceWitness : .override)
         } else if occ.roles.contains(.extendedBy) {
-            reasons.append(.conformanceWitness)
+            reasons.append(.extensionMember)
         } else {
             reasons.append(.directReference)
         }
@@ -217,6 +221,25 @@ struct RenamePlanner {
             return String(name[..<paren])
         }
         return name
+    }
+
+    /// True when an `.overrideOf` occurrence is a protocol-conformance
+    /// witness rather than a subclass override. Walks the overridden
+    /// symbol's definition and checks whether its enclosing type is a
+    /// protocol — the same signal `Queries.findConformances` uses.
+    private func isProtocolWitness(_ occ: SymbolOccurrence) -> Bool {
+        for relation in occ.relations where relation.roles.contains(.overrideOf) {
+            let overriddenUSR = relation.symbol.usr
+            let defs = querier.occurrences(ofUSR: overriddenUSR, roles: [.definition])
+            for def in defs {
+                for parent in def.relations where parent.roles.contains(.childOf) {
+                    if parent.symbol.kind == .protocol {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 
     // MARK: - Reconciliation
@@ -471,6 +494,7 @@ enum RenameReason: String, Codable {
     case directReference = "direct_reference"
     case override = "override"
     case conformanceWitness = "conformance_witness"
+    case extensionMember = "extension_member"
     case objcBridge = "objc_bridge"
     case macroAdjacent = "macro_adjacent"
     case sourcekitLspOnly = "sourcekit_lsp_only"
@@ -542,6 +566,7 @@ enum RefusalReason {
     case invalidIdentifier(details: String)
     case synthesizedSymbolNotRenameable
     case sdkSymbolRename(defPath: String)
+    case usrNotFound(usr: String)
 
     func refusal() -> Refusal {
         switch self {
@@ -568,6 +593,12 @@ enum RefusalReason {
                 reason: "sdk_symbol_rename",
                 message: "The symbol's canonical declaration lives in an SDK at \(path). SDK symbols cannot be renamed from an application project.",
                 remediation: "If you meant to rename a local symbol of the same name, use find_symbol to disambiguate and pick the non-SDK USR."
+            )
+        case .usrNotFound(let usr):
+            return Refusal(
+                reason: "usr_not_found",
+                message: "The index has no definition occurrence for USR \(usr). The symbol may have been removed, or the project was not built with indexing enabled.",
+                remediation: "Rebuild the project in Xcode, verify the USR via find_symbol, or check the index store path with status."
             )
         }
     }

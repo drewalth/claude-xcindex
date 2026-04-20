@@ -142,7 +142,7 @@ struct RenamePlannerTests {
 
     // MARK: - Unknown USR
 
-    @Test("unknown USR returns empty plan with usr_not_found warning, not a refusal")
+    @Test("unknown USR returns a usr_not_found refusal with empty ranges")
     func unknownUSR() throws {
         let fixture = try FixtureHolder.shared()
         let querier = try IndexQuerier(storePath: fixture.storePath)
@@ -150,9 +150,9 @@ struct RenamePlannerTests {
         let planner = RenamePlanner(querier: querier, editedFiles: [], isDisabled: false)
         let plan = planner.plan(usr: "c:@S@NotARealSymbol", newName: "renamed")
 
-        #expect(plan.refusal == nil)
+        let refusal = try #require(plan.refusal)
+        #expect(refusal.reason == "usr_not_found")
         #expect(plan.ranges.isEmpty)
-        #expect(plan.warnings.contains("usr_not_found"))
     }
 
     // MARK: - Session-edited files → red-stale
@@ -203,13 +203,57 @@ struct RenamePlannerTests {
         let plan = planner.plan(usr: base.usr, newName: "setupApp")
 
         #expect(plan.refusal == nil)
-        // At least one range must carry the override reason.
+        // Subclass overrides should tag .override, never .conformanceWitness —
+        // the parent type here is a class, not a protocol.
         let hasOverride = plan.ranges.contains { $0.reasons.contains(.override) }
         #expect(hasOverride, "expected at least one override reason; ranges: \(plan.ranges.map { $0.reasons })")
+        let hasWitness = plan.ranges.contains { $0.reasons.contains(.conformanceWitness) }
+        #expect(!hasWitness, "class override should not be tagged conformance_witness")
 
         // Direct references (definition, calls) carry direct_reference.
         let hasDirect = plan.ranges.contains { $0.reasons.contains(.directReference) }
         #expect(hasDirect)
+    }
+
+    @Test("protocol requirement rename tags the witness with conformance_witness")
+    func witnessReason() throws {
+        let fixture = try FixtureHolder.shared()
+        let querier = try IndexQuerier(storePath: fixture.storePath)
+
+        // AuthManager.authenticate(user:) is a protocol requirement;
+        // DefaultAuthManager.authenticate(user:) is the witness.
+        let all = querier.findRefs(symbolName: "authenticate(user:)")
+        let requirement = try #require(
+            all.first { $0.roles.contains("definition") && $0.path.hasSuffix("AuthManager.swift") && !$0.roles.contains("overrideOf") }
+        )
+
+        let planner = RenamePlanner(querier: querier, editedFiles: [], isDisabled: false)
+        let plan = planner.plan(usr: requirement.usr, newName: "authorize")
+
+        #expect(plan.refusal == nil)
+        let witnessRanges = plan.ranges.filter { $0.reasons.contains(.conformanceWitness) }
+        #expect(!witnessRanges.isEmpty, "expected at least one conformance_witness range; got \(plan.ranges.map { ($0.path, $0.line, $0.reasons) })")
+        // A protocol witness must not also be tagged as a subclass override.
+        #expect(!witnessRanges.contains { $0.reasons.contains(.override) })
+    }
+
+    @Test("extension header rename of the extended type tags extension_member")
+    func extensionMemberReason() throws {
+        let fixture = try FixtureHolder.shared()
+        let querier = try IndexQuerier(storePath: fixture.storePath)
+
+        // DefaultAuthManager has an extension in AuthManager.swift.
+        let all = querier.findRefs(symbolName: "DefaultAuthManager")
+        let classDef = try #require(
+            all.first { $0.roles.contains("definition") && !$0.roles.contains("extendedBy") }
+        )
+
+        let planner = RenamePlanner(querier: querier, editedFiles: [], isDisabled: false)
+        let plan = planner.plan(usr: classDef.usr, newName: "FallbackAuthManager")
+
+        #expect(plan.refusal == nil)
+        let hasExtensionMember = plan.ranges.contains { $0.reasons.contains(.extensionMember) }
+        #expect(hasExtensionMember, "expected at least one extension_member range; got \(plan.ranges.map { ($0.path, $0.line, $0.reasons) })")
     }
 
     // MARK: - JSON round-trip

@@ -255,6 +255,32 @@ with `{reason, message, remediation}`. Known reasons:
 - `synthesized_symbol_not_renameable` — the USR resolves to a
   compiler-synthesized member with no source range.
 - `sdk_symbol_rename` — the declaration lives in an SDK path.
+- `usr_not_found` — the USR has no definition in this index.
+  Rebuild or re-resolve with `find_symbol`.
+
+### Range reasons
+
+Each range carries one or more `reasons` tagging how the occurrence
+was classified. Known codes:
+
+- `direct_reference` — plain declaration, call, or read/write site.
+- `override` — subclass override of a class method.
+- `conformance_witness` — witness declaration for a protocol
+  requirement (IndexStoreDB records both witnesses and subclass
+  overrides with `.overrideOf`; we disambiguate via the enclosing
+  type's kind).
+- `extension_member` — occurrence of the extended type at an
+  `extension` header; renaming this site requires touching the
+  extension too.
+- `macro_adjacent` — LSP-only range with no indexstore counterpart
+  (commonly macro-expanded call sites).
+- `sourcekit_lsp_only` — LSP saw this range; indexstore did not.
+- `session_edited` — file was edited this Claude Code session.
+- `range_end_computed_unverified` — identifier byte length could
+  not be verified (operators, subscripts, labels).
+- `sdk_symbol`, `synthesized_symbol`, `objc_bridge`,
+  `compile_commands_missing`, `file_newer_than_unit` — additional
+  downgrade annotations.
 
 ### Warnings
 
