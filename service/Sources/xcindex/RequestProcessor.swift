@@ -1,13 +1,18 @@
 import Foundation
+import LanguageServerProtocol
 
 /// Routes decoded requests to the appropriate query function.
 ///
 /// Keeps an open `IndexQuerier` cached by store path so repeated queries
-/// against the same project don't re-open the database each time.
+/// against the same project don't re-open the database each time. For
+/// `planRename` requests also keeps an LSP subprocess cached per
+/// (realpath-normalized) workspace root so the sourcekit-lsp spawn +
+/// initialize handshake is paid once per session.
 actor RequestProcessor {
     private var querierCache: [String: IndexQuerier] = [:]
+    private var lspClientCache: [String: LSPClient] = [:]
 
-    func handle(_ request: Request) -> Response {
+    func handle(_ request: Request) async -> Response {
         switch request.op {
         case "findRefs":
             return handleFindRefs(request)
@@ -23,6 +28,8 @@ actor RequestProcessor {
             return handleBlastRadius(request)
         case "status":
             return handleStatus(request)
+        case "planRename":
+            return await handlePlanRename(request)
         default:
             return Response(error: "Unknown op '\(request.op)'")
         }
@@ -138,6 +145,165 @@ actor RequestProcessor {
         }
     }
 
+    // MARK: - planRename
+
+    private func handlePlanRename(_ request: Request) async -> Response {
+        guard let usr = request.usr, !usr.isEmpty else {
+            return Response(error: "planRename requires 'usr'")
+        }
+        guard let newName = request.newName, !newName.isEmpty else {
+            return Response(error: "planRename requires 'newName'")
+        }
+        do {
+            let querier = try makeQuerier(request)
+            let planner = RenamePlanner(querier: querier)
+            let indexstorePlan = planner.plan(usr: usr, newName: newName)
+
+            // Refusals and empty plans skip LSP — reconciliation adds
+            // nothing when there's nothing to verify.
+            if indexstorePlan.refusal != nil || indexstorePlan.ranges.isEmpty {
+                return Response(renamePlan: indexstorePlan)
+            }
+
+            let reconciled = await reconcileWithLSP(
+                plan: indexstorePlan,
+                usr: usr,
+                request: request,
+                querier: querier
+            )
+            return Response(renamePlan: reconciled)
+        } catch {
+            return Response(error: error.localizedDescription)
+        }
+    }
+
+    /// Resolves the workspace, lazily spawns sourcekit-lsp if needed,
+    /// and reconciles the indexstore-only plan with the server's
+    /// `textDocument/references` response. Every failure mode adds a
+    /// specific diagnostic warning so callers can remediate rather
+    /// than guess why the plan wasn't LSP-verified:
+    ///
+    ///   • workspace_root_unresolved     — no projectPath/indexStorePath signal
+    ///   • sourcekit_lsp_not_found       — discover() found no binary
+    ///   • sourcekit_lsp_launch_failed   — spawn + initialize handshake failed
+    ///   • sourcekit_lsp_timeout         — references query exceeded deadline
+    ///   • compile_commands_missing      — .xcodeproj without build-server bridge
+    ///   • sourcekit_lsp_needs_compile_commands — .xcodeproj + LSP returned []
+    ///   • reconciliation_unavailable    — catch-all: LSP was not consulted
+    ///   • reconciliation_empty          — LSP answered with zero locations
+    private func reconcileWithLSP(
+        plan: RenamePlan,
+        usr: String,
+        request: Request,
+        querier: IndexQuerier
+    ) async -> RenamePlan {
+        guard let def = querier.findDefinition(usr: usr) else {
+            return plan
+        }
+
+        guard let workspaceRoot = deriveWorkspaceRoot(request: request) else {
+            return withWarnings(
+                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
+                appending: ["workspace_root_unresolved"]
+            )
+        }
+
+        let diagnostics = WorkspaceDiagnostics(root: workspaceRoot)
+        var projectWarnings: [String] = []
+        if diagnostics.isXcodeProject, !diagnostics.hasBuildServerBridge {
+            projectWarnings.append("compile_commands_missing")
+        }
+
+        let client: LSPClient
+        do {
+            client = try await lspClient(for: workspaceRoot)
+        } catch let error as LSPClientError {
+            FileHandle.standardError.write(Data(
+                "xcindex-lsp: skipping reconciliation — \(error.localizedDescription)\n".utf8
+            ))
+            let extra = error == .binaryNotFound
+                ? ["sourcekit_lsp_not_found"]
+                : ["sourcekit_lsp_launch_failed"]
+            return withWarnings(
+                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
+                appending: projectWarnings + extra
+            )
+        } catch {
+            FileHandle.standardError.write(Data(
+                "xcindex-lsp: skipping reconciliation — \(error.localizedDescription)\n".utf8
+            ))
+            return withWarnings(
+                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
+                appending: projectWarnings + ["sourcekit_lsp_launch_failed"]
+            )
+        }
+
+        do {
+            // IndexStoreDB is 1-indexed UTF-8; LSP is 0-indexed UTF-16.
+            // The -1 alignment only holds exactly for ASCII identifiers;
+            // non-ASCII names are already flagged yellow in the planner.
+            let position = Position(line: def.line - 1, utf16index: def.column - 1)
+            let fileURL = URL(fileURLWithPath: def.path)
+            let locations = try await client.references(fileURL: fileURL, position: position)
+
+            let lspRefs = locations.compactMap { loc -> LSPRefLocation? in
+                guard let path = loc.uri.fileURL?.path else { return nil }
+                return LSPRefLocation(
+                    path: path,
+                    line: loc.range.lowerBound.line,
+                    character: loc.range.lowerBound.utf16index,
+                    endLine: loc.range.upperBound.line,
+                    endCharacter: loc.range.upperBound.utf16index
+                )
+            }
+            var extras = projectWarnings
+            // Empty-from-Xcode-project is the classic "no build context"
+            // case — point the user at xcode-build-server.
+            if lspRefs.isEmpty, diagnostics.isXcodeProject, !diagnostics.hasBuildServerBridge {
+                extras.append("sourcekit_lsp_needs_compile_commands")
+            }
+            let reconciled = RenamePlanner.reconcile(plan, with: lspRefs, lspConsulted: true)
+            return withWarnings(reconciled, appending: extras)
+        } catch let error as LSPClientError where error == .referencesTimeout {
+            FileHandle.standardError.write(Data(
+                "xcindex-lsp: references query timed out\n".utf8
+            ))
+            return withWarnings(
+                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
+                appending: projectWarnings + ["sourcekit_lsp_timeout"]
+            )
+        } catch {
+            FileHandle.standardError.write(Data(
+                "xcindex-lsp: references query failed — \(error.localizedDescription)\n".utf8
+            ))
+            return withWarnings(
+                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
+                appending: projectWarnings
+            )
+        }
+    }
+
+    /// Return a copy of `plan` with `extras` appended to `warnings`,
+    /// preserving order and deduping against existing entries.
+    private func withWarnings(_ plan: RenamePlan, appending extras: [String]) -> RenamePlan {
+        guard !extras.isEmpty else { return plan }
+        var merged = plan.warnings
+        for warning in extras where !merged.contains(warning) {
+            merged.append(warning)
+        }
+        return RenamePlan(
+            usr: plan.usr,
+            oldName: plan.oldName,
+            newName: plan.newName,
+            generatedAt: plan.generatedAt,
+            indexFreshness: plan.indexFreshness,
+            ranges: plan.ranges,
+            summary: plan.summary,
+            refusal: plan.refusal,
+            warnings: merged
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeQuerier(_ request: Request) throws -> IndexQuerier {
@@ -155,5 +321,90 @@ actor RequestProcessor {
         let querier = try IndexQuerier(storePath: storePath)
         querierCache[storePath] = querier
         return querier
+    }
+
+    private func lspClient(for workspaceRoot: URL) async throws -> LSPClient {
+        let key = (workspaceRoot.path as NSString).resolvingSymlinksInPath
+        if let cached = lspClientCache[key] {
+            return cached
+        }
+        let client = try await LSPClient.launch(workspaceRoot: workspaceRoot)
+        lspClientCache[key] = client
+        return client
+    }
+
+    /// Pick a sensible workspace root to hand to sourcekit-lsp.
+    ///
+    /// Priority:
+    ///  1. `projectPath` if given: parent of .xcodeproj/.xcworkspace,
+    ///     or the directory itself for SPM packages.
+    ///  2. Otherwise walk up from `indexStorePath` looking for a
+    ///     `Package.swift` or a sibling .xcodeproj/.xcworkspace — a
+    ///     best-effort fallback for callers that pass only the store.
+    private func deriveWorkspaceRoot(request: Request) -> URL? {
+        if let projectPath = request.projectPath, !projectPath.isEmpty {
+            let url = URL(fileURLWithPath: projectPath)
+            let ext = url.pathExtension
+            if ext == "xcodeproj" || ext == "xcworkspace" {
+                return url.deletingLastPathComponent()
+            }
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: projectPath, isDirectory: &isDir),
+               isDir.boolValue {
+                return url
+            }
+            return url.deletingLastPathComponent()
+        }
+
+        if let indexStorePath = request.indexStorePath, !indexStorePath.isEmpty {
+            var url = URL(fileURLWithPath: indexStorePath)
+            for _ in 0 ..< 10 {
+                url = url.deletingLastPathComponent()
+                if url.path == "/" { break }
+                let pkg = url.appendingPathComponent("Package.swift").path
+                if FileManager.default.fileExists(atPath: pkg) {
+                    return url
+                }
+                if let contents = try? FileManager.default.contentsOfDirectory(atPath: url.path),
+                   contents.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") })
+                {
+                    return url
+                }
+            }
+        }
+        return nil
+    }
+}
+
+// MARK: - Workspace diagnostics
+
+/// Classifies a workspace root as SwiftPM vs. Xcode-project and checks
+/// for the build-context bridge that sourcekit-lsp needs to answer
+/// semantic queries. A `.xcodeproj`/`.xcworkspace` without a
+/// `compile_commands.json` or `buildServer.json` at the root is the
+/// canonical "LSP will return empty" configuration — we surface it as
+/// a `compile_commands_missing` warning so users can install
+/// xcode-build-server instead of wondering why ranges aren't verified.
+struct WorkspaceDiagnostics {
+    let isXcodeProject: Bool
+    let hasBuildServerBridge: Bool
+
+    init(root: URL) {
+        let fm = FileManager.default
+        let contents = (try? fm.contentsOfDirectory(atPath: root.path)) ?? []
+
+        let hasPackageSwift = contents.contains("Package.swift")
+        let hasXcodeWorkspace = contents.contains(where: {
+            $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace")
+        })
+        // Treat mixed repos (both Package.swift *and* an xcodeproj) as
+        // SPM — the package build is what sourcekit-lsp can resolve
+        // without extra setup.
+        self.isXcodeProject = hasXcodeWorkspace && !hasPackageSwift
+
+        let bridgeFiles = ["compile_commands.json", "buildServer.json"]
+        self.hasBuildServerBridge = bridgeFiles.contains(where: {
+            fm.fileExists(atPath: root.appendingPathComponent($0).path)
+        })
     }
 }
