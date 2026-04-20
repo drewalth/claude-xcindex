@@ -22,6 +22,18 @@ actor LSPClient {
     private let process: Process
     private let capabilities: ServerCapabilities
 
+    private enum State {
+        case running
+        case shuttingDown
+        case terminated
+    }
+    private var state: State = .running
+
+    // sourcekit-lsp owns the open-document state once notified; re-sending
+    // didOpen for the same URI in-process triggers "document already open"
+    // errors from some server builds and wastes round-trips regardless.
+    private var openedDocuments: Set<DocumentURI> = []
+
     /// Server capabilities advertised in the initialize response.
     /// Used by the doctor command + reconciliation path to decide
     /// which semantic queries the live server supports.
@@ -124,6 +136,11 @@ actor LSPClient {
             workspaceFolders: [WorkspaceFolder(uri: DocumentURI(workspaceRoot))]
         )
 
+        // Track PID for atexit fallback before we await anything that
+        // could fail — if the parent dies between now and the handshake,
+        // atexit still finds and SIGTERMs this child.
+        xcindexTrackChildPID(process.processIdentifier)
+
         let initResult: InitializeResult
         do {
             initResult = try await withThrowingTaskGroup(of: InitializeResult.self) { group in
@@ -153,6 +170,7 @@ actor LSPClient {
             // Best-effort cleanup if initialize failed.
             connection.close()
             if process.isRunning { process.terminate() }
+            xcindexUntrackChildPID(process.processIdentifier)
             throw error
         }
 
@@ -190,21 +208,27 @@ actor LSPClient {
         position: Position,
         timeout: TimeInterval = 10
     ) async throws -> [Location] {
+        guard state == .running else {
+            throw LSPClientError.notRunning
+        }
+
         // Load the current on-disk contents. Session-edited in-flight
         // buffers are NOT handled here (v1.1 limitation per Reviewer
         // Concerns — tier those files as red-stale in the planner).
-        let text = try String(contentsOf: fileURL, encoding: .utf8)
         let uri = DocumentURI(fileURL)
-        let language = Self.inferLanguage(fileURL: fileURL)
-
-        connection.send(DidOpenTextDocumentNotification(
-            textDocument: TextDocumentItem(
-                uri: uri,
-                language: language,
-                version: 0,
-                text: text
-            )
-        ))
+        if !openedDocuments.contains(uri) {
+            let text = try String(contentsOf: fileURL, encoding: .utf8)
+            let language = Self.inferLanguage(fileURL: fileURL)
+            connection.send(DidOpenTextDocumentNotification(
+                textDocument: TextDocumentItem(
+                    uri: uri,
+                    language: language,
+                    version: 0,
+                    text: text
+                )
+            ))
+            openedDocuments.insert(uri)
+        }
 
         let request = ReferencesRequest(
             textDocument: TextDocumentIdentifier(uri),
@@ -249,9 +273,13 @@ actor LSPClient {
     }
 
     /// Send `shutdown` + `exit` and wait briefly for the process to
-    /// terminate. Best-effort — any failure here is swallowed because
-    /// we're already tearing down.
+    /// terminate. Idempotent: a second call after teardown is a no-op.
+    /// Any failure during the handshake is swallowed because we're
+    /// already tearing down.
     func shutdown() async {
+        guard state == .running else { return }
+        state = .shuttingDown
+
         _ = try? await withCheckedThrowingContinuation { (cont: CheckedContinuation<ShutdownRequest.Response, Error>) in
             _ = connection.send(ShutdownRequest()) { result in
                 switch result {
@@ -262,12 +290,29 @@ actor LSPClient {
         }
         connection.send(ExitNotification())
         connection.close()
-        // Give the process a moment to exit cleanly, then SIGTERM if needed.
+
         let deadline = Date().addingTimeInterval(2)
         while process.isRunning, Date() < deadline {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         if process.isRunning { process.terminate() }
+
+        // SIGTERM may be ignored by a wedged sourcekit-lsp; give it a
+        // brief grace window, then SIGKILL rather than leak the child.
+        let killDeadline = Date().addingTimeInterval(0.5)
+        while process.isRunning, Date() < killDeadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        if process.isRunning {
+            FileHandle.standardError.write(Data(
+                "xcindex-lsp: sourcekit-lsp unresponsive to SIGTERM; escalating to SIGKILL (pid \(process.processIdentifier))\n".utf8
+            ))
+            kill(process.processIdentifier, SIGKILL)
+        }
+
+        xcindexUntrackChildPID(process.processIdentifier)
+        openedDocuments.removeAll()
+        state = .terminated
     }
 }
 
@@ -296,6 +341,8 @@ final class NoopMessageHandler: MessageHandler, Sendable {
         // ConfigurationRequest) the Response type is `VoidResponse` or
         // an array we can default.
         if Request.Response.self == VoidResponse.self {
+            // Type equality check above makes this runtime-safe; Swift
+            // generics can't propagate that equality to the cast site.
             reply(.success(VoidResponse() as! Request.Response))
         } else {
             reply(.failure(.methodNotFound(Request.method)))
@@ -327,6 +374,7 @@ enum LSPClientError: LocalizedError, Equatable {
     case binaryNotFound
     case initializeTimeout
     case referencesTimeout
+    case notRunning
 
     var errorDescription: String? {
         switch self {
@@ -336,6 +384,41 @@ enum LSPClientError: LocalizedError, Equatable {
             return "sourcekit-lsp did not respond to initialize within the deadline."
         case .referencesTimeout:
             return "sourcekit-lsp did not respond to textDocument/references within the deadline."
+        case .notRunning:
+            return "sourcekit-lsp client has been shut down; cannot issue new requests."
         }
+    }
+}
+
+// MARK: - Child-PID registry for atexit fallback
+//
+// Normal teardown runs through `LSPClient.shutdown()`. If the xcindex
+// process exits through a path that skips that (uncaught error, abrupt
+// EOF handled before the shutdown call, atexit from library code), the
+// sourcekit-lsp children would otherwise be orphaned. The atexit hook
+// installed in main.swift SIGTERMs everything still in this set.
+
+private nonisolated(unsafe) var _xcindexTrackedChildPIDs: Set<Int32> = []
+private let _xcindexTrackedChildPIDsLock = NSLock()
+
+func xcindexTrackChildPID(_ pid: Int32) {
+    _xcindexTrackedChildPIDsLock.lock()
+    _xcindexTrackedChildPIDs.insert(pid)
+    _xcindexTrackedChildPIDsLock.unlock()
+}
+
+func xcindexUntrackChildPID(_ pid: Int32) {
+    _xcindexTrackedChildPIDsLock.lock()
+    _xcindexTrackedChildPIDs.remove(pid)
+    _xcindexTrackedChildPIDsLock.unlock()
+}
+
+func xcindexTerminateTrackedChildren() {
+    _xcindexTrackedChildPIDsLock.lock()
+    let pids = _xcindexTrackedChildPIDs
+    _xcindexTrackedChildPIDs.removeAll()
+    _xcindexTrackedChildPIDsLock.unlock()
+    for pid in pids {
+        kill(pid, SIGTERM)
     }
 }

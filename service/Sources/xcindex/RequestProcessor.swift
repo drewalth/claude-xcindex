@@ -333,6 +333,17 @@ actor RequestProcessor {
         return client
     }
 
+    /// Tear down every cached sourcekit-lsp subprocess. Called on
+    /// normal EOF and from the SIGINT/SIGTERM handlers in main.swift —
+    /// idempotent per `LSPClient.shutdown()`.
+    func shutdownAll() async {
+        let clients = Array(lspClientCache.values)
+        lspClientCache.removeAll()
+        for client in clients {
+            await client.shutdown()
+        }
+    }
+
     /// Pick a sensible workspace root to hand to sourcekit-lsp.
     ///
     /// Priority:
