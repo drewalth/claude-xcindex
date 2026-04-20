@@ -230,9 +230,15 @@ because sourcekit-lsp's reconciliation pass needs a workspace root.
     "red_stale": 0
   },
   "refusal": null,
-  "warnings": []
+  "warnings": [],
+  "truncated": false
 }
 ```
+
+`ranges` is capped by the `maxRanges` argument (default 500, max 5000).
+When capped, `truncated` is `true` and `summary` still reflects the
+full counts — re-invoke with a larger `maxRanges` to page through the
+rest.
 
 ### Tiers
 
@@ -275,6 +281,8 @@ was classified. Known codes:
 - `macro_adjacent` — LSP-only range with no indexstore counterpart
   (commonly macro-expanded call sites).
 - `sourcekit_lsp_only` — LSP saw this range; indexstore did not.
+- `lsp_did_not_echo` — indexstore saw this range but LSP did not
+  echo it back (the range is downgraded to yellow-disagreement).
 - `session_edited` — file was edited this Claude Code session.
 - `range_end_computed_unverified` — identifier byte length could
   not be verified (operators, subscripts, labels).
@@ -292,6 +300,8 @@ reconciliation. Common codes:
 - `workspace_root_unresolved` — neither `projectPath` nor
   `indexStorePath` lets us pick a root for LSP.
 - `sourcekit_lsp_not_found` — no sourcekit-lsp binary on this machine.
+- `sourcekit_lsp_binary_not_executable` — `SOURCEKIT_LSP_PATH` points
+  at a file that exists but lacks the exec bit (`chmod +x` it).
 - `sourcekit_lsp_launch_failed` — binary found, spawn / handshake failed.
 - `sourcekit_lsp_timeout` — references query exceeded its deadline.
 - `sourcekit_lsp_process_terminated` — child process exited between requests.

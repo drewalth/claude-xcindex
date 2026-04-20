@@ -19,15 +19,27 @@ import IndexStoreDB
 //   │   7. Emit plan + summary + optional refusal/warnings        │
 //   └────────────────────────────────────────────────────────────┘
 
+/// The narrow read-only slice of `IndexQuerier` that `RenamePlanner`
+/// exercises. Extracted so tests can substitute a hand-crafted fake
+/// for branches (SDK-path refusal, synthesized-symbol refusal) that
+/// a real SPM fixture can't reliably produce.
+protocol RenamePlannerQueryBackend {
+    func findDefinition(usr: String) -> OccurrenceResult?
+    func findOverrides(usr: String) -> [OccurrenceResult]
+    func occurrences(ofUSR usr: String, roles: SymbolRole) -> [SymbolOccurrence]
+}
+
+extension IndexQuerier: RenamePlannerQueryBackend {}
+
 struct RenamePlanner {
-    let querier: IndexQuerier
+    let querier: RenamePlannerQueryBackend
     let editedFiles: Set<String>
     let isDisabled: Bool
 
     /// `isDisabled` is injectable so tests can exercise the kill-switch
     /// branch without mutating process-global env state.
     init(
-        querier: IndexQuerier,
+        querier: RenamePlannerQueryBackend,
         editedFiles: Set<String> = Freshness.getEditedFiles(),
         isDisabled: Bool = RenamePlanner.readEnvKillSwitch()
     ) {
@@ -306,7 +318,12 @@ struct RenamePlanner {
                 if lspKeys.isEmpty {
                     upgraded.append(range)
                 } else {
-                    upgraded.append(range.withTier(.yellowDisagreement).withReasonsMerged([.sourcekitLspOnly]))
+                    // `.lspDidNotEcho` is the inverse of
+                    // `.sourcekitLspOnly`: this range came from
+                    // indexstore and LSP failed to echo it. Using
+                    // `.sourcekitLspOnly` here would read backwards
+                    // and mislead JSON consumers.
+                    upgraded.append(range.withTier(.yellowDisagreement).withReasonsMerged([.lspDidNotEcho]))
                 }
             }
         }
@@ -393,6 +410,35 @@ struct RenamePlan: Codable {
     let summary: PlanSummary
     let refusal: Refusal?
     let warnings: [RenameWarning]
+    /// True when `ranges` has been capped below the caller's
+    /// `maxRanges`. `summary` still counts every range the planner
+    /// produced; consumers driving Edit calls need to re-invoke with a
+    /// larger cap to see the rest.
+    let truncated: Bool
+
+    init(
+        usr: String,
+        oldName: String,
+        newName: String,
+        generatedAt: String,
+        indexFreshness: IndexFreshness,
+        ranges: [RenameRange],
+        summary: PlanSummary,
+        refusal: Refusal?,
+        warnings: [RenameWarning],
+        truncated: Bool = false
+    ) {
+        self.usr = usr
+        self.oldName = oldName
+        self.newName = newName
+        self.generatedAt = generatedAt
+        self.indexFreshness = indexFreshness
+        self.ranges = ranges
+        self.summary = summary
+        self.refusal = refusal
+        self.warnings = warnings
+        self.truncated = truncated
+    }
 
     static func refused(
         usr: String,
@@ -412,6 +458,24 @@ struct RenamePlan: Codable {
             summary: .zero,
             refusal: refusal,
             warnings: []
+        )
+    }
+
+    /// Return a copy of this plan with `ranges` capped at `limit`.
+    /// Leaves `summary` untouched so consumers see the real totals.
+    func capped(at limit: Int) -> RenamePlan {
+        guard ranges.count > limit else { return self }
+        return RenamePlan(
+            usr: usr,
+            oldName: oldName,
+            newName: newName,
+            generatedAt: generatedAt,
+            indexFreshness: indexFreshness,
+            ranges: Array(ranges.prefix(limit)),
+            summary: summary,
+            refusal: refusal,
+            warnings: warnings,
+            truncated: true
         )
     }
 }
@@ -490,6 +554,7 @@ enum RenameWarning: String, Codable, Equatable {
     case reconciliationEmpty = "reconciliation_empty"
     case workspaceRootUnresolved = "workspace_root_unresolved"
     case sourcekitLspNotFound = "sourcekit_lsp_not_found"
+    case sourcekitLspBinaryNotExecutable = "sourcekit_lsp_binary_not_executable"
     case sourcekitLspLaunchFailed = "sourcekit_lsp_launch_failed"
     case sourcekitLspTimeout = "sourcekit_lsp_timeout"
     case sourcekitLspNotRunning = "sourcekit_lsp_not_running"
@@ -509,6 +574,7 @@ enum RenameReason: String, Codable {
     case objcBridge = "objc_bridge"
     case macroAdjacent = "macro_adjacent"
     case sourcekitLspOnly = "sourcekit_lsp_only"
+    case lspDidNotEcho = "lsp_did_not_echo"
     case sessionEdited = "session_edited"
     case fileNewerThanUnit = "file_newer_than_unit"
     case sdkSymbol = "sdk_symbol"

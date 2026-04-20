@@ -175,10 +175,11 @@ enum ExternalFixtureHarness {
     /// land in the summary but never fail the run.
     static let defaultPlanSloMs: Double = 5000
 
-    /// Run the coverage harness for a named external fixture. Skips
-    /// silently when the checkout isn't available (local opt-in);
-    /// fails each verified symbol whose recall drops below 1.0 or
-    /// whose plan wall time exceeds the SLO.
+    /// Run the coverage harness for a named external fixture. Fails
+    /// loudly when the checkout is missing unless
+    /// `XCINDEX_ALLOW_FIXTURE_SKIP=1` is set — a silent skip on CI
+    /// would mask a fetch-script regression as a passing run with
+    /// zero assertions executed.
     ///
     /// - Parameters:
     ///   - name: Short fixture identifier (e.g. "tca", "swift-log").
@@ -194,6 +195,16 @@ enum ExternalFixtureHarness {
         summaryURL: URL
     ) throws {
         guard let fixture = try FixtureBuilder.buildExternalIndexIfAvailable(name: name) else {
+            let env = ProcessInfo.processInfo.environment
+            if env["XCINDEX_ALLOW_FIXTURE_SKIP"] == "1" {
+                return
+            }
+            Issue.record("""
+            External fixture '\(name)' is not checked out at the expected location. \
+            Run `scripts/fetch-fixture.sh \(name)` to populate it, or set \
+            XCINDEX_ALLOW_FIXTURE_SKIP=1 to skip this suite locally. \
+            A silent skip would otherwise register as a passing test with zero assertions.
+            """)
             return
         }
 

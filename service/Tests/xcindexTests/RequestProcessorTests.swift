@@ -56,6 +56,59 @@ struct RequestProcessorTests {
         #expect(hasDegradationWarning || hasVerified)
     }
 
+    @Test("dead LSP client is evicted from the cache after the subprocess exits mid-request")
+    func deadClientEviction() async throws {
+        // Stand up a fake sourcekit-lsp that exits the moment a
+        // textDocument/references request lands. Two consecutive
+        // planRename calls should each end up launching their own
+        // subprocess — if the cache held onto the corpse the second
+        // call would fail with `.sourcekitLspNotRunning` instead of
+        // re-launching. Injecting the binary through the actor's test
+        // hook avoids mutating `SOURCEKIT_LSP_PATH` — that env var is
+        // process-global and would leak into other test suites
+        // running in parallel.
+        let fake = try FakeLSPServer(mode: .exitAfterInit)
+
+        let fixture = try FixtureBuilder.buildCanaryIndex()
+        let packageRoot = URL(fileURLWithPath: fixture.sourceDir)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let processor = RequestProcessor()
+        await processor.setLspBinaryOverrideForTesting(fake.binaryURL)
+
+        let lookup = await processor.handle(Request(
+            op: "findSymbol",
+            indexStorePath: fixture.storePath,
+            symbolName: "UserService"
+        ))
+        let usr = try #require(lookup.symbols?.first?.usr)
+
+        let request = Request(
+            op: "planRename",
+            projectPath: packageRoot.path,
+            indexStorePath: fixture.storePath,
+            usr: usr,
+            newName: "AccountService"
+        )
+
+        let first = await processor.handle(request)
+        _ = try #require(first.renamePlan)
+        // After the first call, the subprocess exited mid-request and
+        // the cache should be empty again.
+        let afterFirst = await processor.lspClientCacheCount()
+        #expect(afterFirst == 0, "dead client was not evicted; cache holds \(afterFirst) entries")
+
+        let second = await processor.handle(request)
+        let plan2 = try #require(second.renamePlan)
+        // A stale cache would re-hand the dead client to the second
+        // call, which would throw .notRunning at the references-check
+        // guard. Assert the opposite shape: either the subprocess died
+        // again (re-launch happened) or it answered — never .notRunning.
+        #expect(!plan2.warnings.contains(.sourcekitLspNotRunning),
+                "second planRename saw sourcekit_lsp_not_running — cache held a dead client")
+    }
+
     @Test("planRename returns refusal without touching LSP on invalid identifier")
     func refusalShortCircuitsLSP() async throws {
         let fixture = try FixtureBuilder.buildCanaryIndex()
@@ -81,7 +134,7 @@ struct DiagnoseLSPErrorTests {
     func taxonomyIsExhaustive() {
         let cases: [(LSPClientError, RenameWarning)] = [
             (.binaryNotFound, .sourcekitLspNotFound),
-            (.binaryNotExecutable(path: "/bin/false"), .sourcekitLspNotFound),
+            (.binaryNotExecutable(path: "/bin/false"), .sourcekitLspBinaryNotExecutable),
             (.initializeTimeout, .sourcekitLspLaunchFailed),
             (.referencesTimeout, .sourcekitLspTimeout),
             (.notRunning, .sourcekitLspNotRunning),

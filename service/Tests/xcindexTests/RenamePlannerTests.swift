@@ -1,4 +1,5 @@
 import Foundation
+import IndexStoreDB
 import Testing
 @testable import xcindex
 
@@ -138,6 +139,58 @@ struct RenamePlannerTests {
 
         #expect(plan.refusal == nil)
         #expect(!plan.ranges.isEmpty)
+    }
+
+    // MARK: - SDK-path refusal
+
+    @Test("definition in an SDK path refuses with sdk_symbol_rename")
+    func sdkPathRefusal() {
+        // A real SPM fixture can't reliably surface a definition in an
+        // SDK path — stdlib symbols aren't always indexed, and relying
+        // on Foundation/UIKit makes the test toolchain-dependent.
+        // Stub the backend so the refusal branch is exercised directly.
+        let sdkPath = "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/Foundation.swiftmodule/Foundation.swiftinterface"
+        let stub = StubBackend(definition: OccurrenceResult(
+            usr: "s:10Foundation3URLV",
+            symbolName: "URL",
+            path: sdkPath,
+            line: 100,
+            column: 14,
+            roles: ["definition"]
+        ))
+
+        let planner = RenamePlanner(querier: stub, editedFiles: [], isDisabled: false)
+        let plan = planner.plan(usr: "s:10Foundation3URLV", newName: "Address")
+
+        let refusal = try? #require(plan.refusal)
+        #expect(refusal?.reason == "sdk_symbol_rename")
+        #expect(refusal?.message.contains(sdkPath) == true)
+        #expect(plan.oldName == "URL")
+        #expect(plan.ranges.isEmpty)
+    }
+
+    @Test("empty definition path refuses with synthesized_symbol_not_renameable")
+    func synthesizedSymbolRefusal() {
+        // Compiler-synthesized members (Codable inits, property-wrapper
+        // accessors) resolve to a definition occurrence with no
+        // rewritable source range — IndexStoreDB reports path="" and/or
+        // line=0. The planner must refuse rather than emit ranges that
+        // point at nothing.
+        let stub = StubBackend(definition: OccurrenceResult(
+            usr: "s:7MyApp4FooV",
+            symbolName: "Foo",
+            path: "",
+            line: 0,
+            column: 0,
+            roles: ["definition"]
+        ))
+
+        let planner = RenamePlanner(querier: stub, editedFiles: [], isDisabled: false)
+        let plan = planner.plan(usr: "s:7MyApp4FooV", newName: "Bar")
+
+        let refusal = try? #require(plan.refusal)
+        #expect(refusal?.reason == "synthesized_symbol_not_renameable")
+        #expect(plan.ranges.isEmpty)
     }
 
     // MARK: - Unknown USR
@@ -310,6 +363,40 @@ struct RenamePlannerTests {
         #expect(summary.greenVerified == 1)
     }
 
+    // MARK: - Range cap
+
+    @Test("capped(at:) drops ranges past the limit and sets truncated=true, preserving summary")
+    func cappedTruncation() {
+        let ranges = (0 ..< 5).map { i in
+            RenameRange(
+                path: "/tmp/a.swift", line: i + 1, column: 1, endColumn: 5,
+                tier: .greenIndexstore, reasons: [.directReference],
+                module: nil, source: .indexstore
+            )
+        }
+        let plan = Self.makePlan(ranges: ranges)
+        let capped = plan.capped(at: 2)
+        #expect(capped.ranges.count == 2)
+        #expect(capped.truncated == true)
+        // Summary is intentionally preserved so consumers see the true totals.
+        #expect(capped.summary.greenIndexstore == 5)
+    }
+
+    @Test("capped(at:) is a no-op when ranges fit under the limit")
+    func cappedNoOp() {
+        let ranges = [
+            RenameRange(
+                path: "/tmp/a.swift", line: 1, column: 1, endColumn: 5,
+                tier: .greenIndexstore, reasons: [.directReference],
+                module: nil, source: .indexstore
+            )
+        ]
+        let plan = Self.makePlan(ranges: ranges)
+        let capped = plan.capped(at: 10)
+        #expect(capped.ranges.count == 1)
+        #expect(capped.truncated == false)
+    }
+
     // MARK: - SDK path detection
 
     // MARK: - Reconciliation
@@ -345,7 +432,10 @@ struct RenamePlannerTests {
         let merged = RenamePlanner.reconcile(indexstorePlan, with: lsp)
         let aRange = try? #require(merged.ranges.first { ($0.path as NSString).lastPathComponent == "A.swift" })
         #expect(aRange?.tier == .yellowDisagreement)
-        #expect(aRange?.reasons.contains(.sourcekitLspOnly) == true)
+        #expect(aRange?.reasons.contains(.lspDidNotEcho) == true)
+        // Must not carry `.sourcekitLspOnly` — that reason means the
+        // opposite (LSP-only, indexstore didn't see it).
+        #expect(aRange?.reasons.contains(.sourcekitLspOnly) == false)
     }
 
     @Test("reconcile: LSP only → yellow-lsp-only range added to plan")
@@ -442,6 +532,27 @@ struct RenamePlannerTests {
         #expect(!RenamePlanner.isSDKPath("/Users/me/Projects/App/Sources/UserService.swift"))
         #expect(!RenamePlanner.isSDKPath("/tmp/my-app/Sources/Main.swift"))
         #expect(!RenamePlanner.isSDKPath(""))
+    }
+}
+
+// MARK: - Stub backend
+
+/// Minimal `RenamePlannerQueryBackend` stub for unit tests that need
+/// to drive refusal branches (SDK / synthesized) without constructing
+/// a real IndexStoreDB fixture.
+private struct StubBackend: RenamePlannerQueryBackend {
+    let definition: OccurrenceResult?
+
+    func findDefinition(usr _: String) -> OccurrenceResult? {
+        definition
+    }
+
+    func findOverrides(usr _: String) -> [OccurrenceResult] {
+        []
+    }
+
+    func occurrences(ofUSR _: String, roles _: SymbolRole) -> [SymbolOccurrence] {
+        []
     }
 }
 

@@ -246,6 +246,13 @@ private enum ToolDefinitions {
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
                 "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "maxRanges": Schema.integer(
+                    "Cap on the number of ranges returned (default 500, max 5000). " +
+                        "When the planner produces more, the response's `truncated` " +
+                        "field is true and `summary` still reflects the full counts; " +
+                        "re-invoke with a larger cap if you need the rest.",
+                    min: 1, max: 5000, default: 500
+                ),
             ],
             required: ["usr", "newName"]
         )
@@ -556,6 +563,7 @@ enum Dispatcher {
         guard let newName = args["newName"]?.stringValue, !newName.isEmpty else {
             return error("plan_rename requires 'newName'")
         }
+        let maxRanges = args["maxRanges"]?.intValue ?? 500
         let req = Request(
             op: "planRename",
             projectPath: args["projectPath"]?.stringValue,
@@ -567,9 +575,11 @@ enum Dispatcher {
         if let err = resp.error {
             return error(err)
         }
-        guard let plan = resp.renamePlan else {
+        guard let fullPlan = resp.renamePlan else {
             return .init(content: [text("No plan returned.")])
         }
+
+        let plan = fullPlan.capped(at: maxRanges)
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -582,6 +592,10 @@ enum Dispatcher {
         }
 
         var lines = ["```json", jsonString, "```"]
+        if plan.truncated {
+            lines.append("")
+            lines.append("⚠️  Plan truncated to \(plan.ranges.count) of \(fullPlan.ranges.count) ranges. Re-invoke with a larger `maxRanges` to see the rest.")
+        }
         let involved = Array(Set(plan.ranges.map { $0.path }))
         if let note = Freshness.staleNote(involvedPaths: involved) {
             lines.append("")

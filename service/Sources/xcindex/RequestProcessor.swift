@@ -12,6 +12,12 @@ actor RequestProcessor {
     private var querierCache: [String: IndexQuerier] = [:]
     private var lspClientCache: [String: LSPClient] = [:]
 
+    /// Test hook: when non-nil, `lspClient(for:)` launches this binary
+    /// instead of the auto-discovered sourcekit-lsp. Avoids relying on
+    /// process-global `SOURCEKIT_LSP_PATH` mutation, which would leak
+    /// across Swift Testing suites running in parallel.
+    var lspBinaryOverrideForTesting: URL?
+
     func handle(_ request: Request) async -> Response {
         switch request.op {
         case "findRefs":
@@ -134,14 +140,11 @@ actor RequestProcessor {
             let querier = try querierForStore(storePath)
             return Response(status: querier.status(storePath: storePath))
         } catch {
-            // Status should be informative even when the index doesn't exist
-            return Response(status: StatusResult(
-                indexStorePath: request.indexStorePath ?? "(unknown)",
-                indexMtime: nil,
-                staleFileCount: 0,
-                staleFiles: [],
-                summary: error.localizedDescription
-            ))
+            // Surface the real failure rather than a synthetic "fresh
+            // empty index": a broken store, missing libIndexStore, or
+            // a permissions error would otherwise render identically
+            // to a project with zero edits.
+            return Response(error: error.localizedDescription)
         }
     }
 
@@ -226,7 +229,23 @@ actor RequestProcessor {
             // non-ASCII names are already flagged yellow in the planner.
             let position = Position(line: def.line - 1, utf16index: def.column - 1)
             let fileURL = URL(fileURLWithPath: def.path)
-            let locations = try await client.references(fileURL: fileURL, position: position)
+            let locations: [Location]
+            do {
+                locations = try await client.references(fileURL: fileURL, position: position)
+            } catch {
+                // A dead child or shut-down client must be dropped
+                // from the cache so the next planRename re-launches
+                // instead of getting the same corpse back. An exited
+                // subprocess surfaces as `.protocolError("connection
+                // closed")`, not `.processTerminated`, so probe the
+                // client's liveness rather than pattern-matching the
+                // error taxonomy — a transient timeout on a healthy
+                // client leaves `isAlive` true and the cache intact.
+                if await !client.isAlive {
+                    evictLSPClient(for: workspaceRoot)
+                }
+                throw error
+            }
 
             let lspRefs = locations.compactMap { loc -> LSPRefLocation? in
                 guard let path = loc.uri.fileURL?.path else { return nil }
@@ -276,7 +295,10 @@ actor RequestProcessor {
             case .binaryNotFound:
                 return (.sourcekitLspNotFound, "binary not found: \(lspError.localizedDescription)")
             case .binaryNotExecutable(let path):
-                return (.sourcekitLspNotFound, "binary not executable at \(path)")
+                // Distinct code from `.sourcekitLspNotFound`: the user
+                // has a path set, it just lacks the exec bit. The
+                // remediation is `chmod +x`, not reinstalling.
+                return (.sourcekitLspBinaryNotExecutable, "binary not executable at \(path); run `chmod +x \(path)`")
             case .initializeTimeout:
                 return (.sourcekitLspLaunchFailed, "initialize timed out during \(phase)")
             case .referencesTimeout:
@@ -338,13 +360,35 @@ actor RequestProcessor {
     }
 
     private func lspClient(for workspaceRoot: URL) async throws -> LSPClient {
-        let key = (workspaceRoot.path as NSString).resolvingSymlinksInPath
+        let key = Self.cacheKey(for: workspaceRoot)
         if let cached = lspClientCache[key] {
             return cached
         }
-        let client = try await LSPClient.launch(workspaceRoot: workspaceRoot)
+        let client = try await LSPClient.launch(
+            workspaceRoot: workspaceRoot,
+            binaryOverride: lspBinaryOverrideForTesting
+        )
         lspClientCache[key] = client
         return client
+    }
+
+    private func evictLSPClient(for workspaceRoot: URL) {
+        lspClientCache.removeValue(forKey: Self.cacheKey(for: workspaceRoot))
+    }
+
+    private static func cacheKey(for workspaceRoot: URL) -> String {
+        (workspaceRoot.path as NSString).resolvingSymlinksInPath
+    }
+
+    /// Test-only window into the cache. Avoids spelling
+    /// `lspClientCache` across `@testable` — the property can stay
+    /// `private` while the test verifies eviction semantics.
+    func lspClientCacheCount() -> Int {
+        lspClientCache.count
+    }
+
+    func setLspBinaryOverrideForTesting(_ binary: URL?) {
+        lspBinaryOverrideForTesting = binary
     }
 
     /// Tear down every cached sourcekit-lsp subprocess. Called on

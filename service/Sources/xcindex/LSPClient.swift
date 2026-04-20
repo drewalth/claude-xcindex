@@ -32,6 +32,16 @@ actor LSPClient {
         capabilities
     }
 
+    /// True when the cached client is still usable: state is
+    /// `.running` *and* the subprocess has not exited. Callers evict
+    /// from their cache when this flips false — the library reports a
+    /// dead connection as a `.protocolError`, which is
+    /// indistinguishable from a live server returning a real
+    /// ResponseError at the taxonomy level.
+    var isAlive: Bool {
+        state == .running && process.isRunning
+    }
+
     private init(connection: JSONRPCConnection, process: Process, capabilities: ServerCapabilities) {
         self.connection = connection
         self.process = process
@@ -171,7 +181,7 @@ actor LSPClient {
     /// at `position` inside `fileURL`. Opens the file first (required
     /// for the server to parse and index it), then issues
     /// `textDocument/references`. Returns an empty array if the
-    /// server cannot answer (e.g. the project lacks a
+    /// server has no locations to report (e.g. the project lacks a
     /// `compile_commands.json` bridge for .xcodeproj sources).
     ///
     /// Paths returned in each Location are passed through as-is;
@@ -182,8 +192,13 @@ actor LSPClient {
     ///   - fileURL: the file containing the declaration.
     ///   - position: 0-indexed (line, character) of the declaration.
     ///   - timeout: seconds to wait for the references response.
-    ///     Beyond the timeout, returns the empty array and logs
-    ///     "sourcekit-lsp-timeout" at the call site for tier labeling.
+    ///     Throws `LSPClientError.referencesTimeout` past the
+    ///     deadline; `RequestProcessor.reconcileWithLSP` maps that
+    ///     to the `sourcekit_lsp_timeout` plan warning.
+    ///
+    /// - Throws: `LSPClientError` — `.notRunning`,
+    ///   `.processTerminated`, `.fileReadFailed`, `.referencesTimeout`,
+    ///   or `.protocolError` for a `ResponseError` from the server.
     func references(
         fileURL: URL,
         position: Position,
@@ -354,10 +369,33 @@ final class OneshotFlag: @unchecked Sendable {
 // workspace/configuration. We reply with the default success payload
 // so the server doesn't log errors / stall. Any unhandled message type
 // flows through the library's default (returning methodNotFound).
+//
+// Notifications: window/logMessage and window/showMessage carry
+// server-side diagnostics that are the only signal when something
+// goes wrong inside sourcekit-lsp ("couldn't load module X",
+// "index-store not found"). Dropping them silently makes plan_rename
+// degradations unexplainable. We forward those to stderr with the
+// same `xcindex-lsp:` prefix the library uses for stderr passthrough.
 
 final class NoopMessageHandler: MessageHandler, Sendable {
-    func handle(_: some NotificationType) {
-        // Ignore all server-to-client notifications.
+    func handle(_ notification: some NotificationType) {
+        if let log = notification as? LogMessageNotification {
+            Self.logToStderr(type: log.type, message: log.message, kind: "log")
+        } else if let show = notification as? ShowMessageNotification {
+            Self.logToStderr(type: show.type, message: show.message, kind: "show")
+        }
+    }
+
+    private static func logToStderr(type: WindowMessageType, message: String, kind: String) {
+        let severity: String = switch type {
+        case .error: "error"
+        case .warning: "warning"
+        case .info: "info"
+        case .log: "log"
+        }
+        FileHandle.standardError.write(Data(
+            "xcindex-lsp: [\(severity)] \(kind): \(message)\n".utf8
+        ))
     }
 
     func handle<Request: RequestType>(
@@ -396,7 +434,12 @@ private let builtinRequests: [_RequestType.Type] = [
 ]
 
 private let builtinNotifications: [NotificationType.Type] = [
-    // Server-initiated notifications we expect and can safely ignore.
+    // window/logMessage + window/showMessage carry server diagnostics
+    // (e.g. "couldn't load module X", "index-store not found") — the
+    // only signal when sourcekit-lsp silently returns zero locations.
+    // NoopMessageHandler forwards both to stderr.
+    LogMessageNotification.self,
+    ShowMessageNotification.self,
 ]
 
 // MARK: - Errors

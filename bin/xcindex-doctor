@@ -131,8 +131,22 @@ fi
 section "sourcekit-lsp"
 
 sklsp_path=""
-if [[ -n "${SOURCEKIT_LSP_PATH:-}" && -x "${SOURCEKIT_LSP_PATH}" ]]; then
-    sklsp_path="$SOURCEKIT_LSP_PATH"
+# The env override must be authoritative when it's set: if the user
+# points at a file that exists but isn't executable, falling through
+# to xcrun hides the real misconfiguration. Diagnose both cases
+# explicitly — the warning code in xcindex maps to a distinct
+# `sourcekit_lsp_binary_not_executable` remediation (`chmod +x`)
+# that's unrelated to "install via Xcode."
+if [[ -n "${SOURCEKIT_LSP_PATH:-}" ]]; then
+    if [[ ! -e "${SOURCEKIT_LSP_PATH}" ]]; then
+        fail "SOURCEKIT_LSP_PATH=${SOURCEKIT_LSP_PATH} does not exist." \
+             "Unset the env var or point it at a real sourcekit-lsp binary."
+    elif [[ ! -x "${SOURCEKIT_LSP_PATH}" ]]; then
+        fail "SOURCEKIT_LSP_PATH=${SOURCEKIT_LSP_PATH} is not executable." \
+             "Run: chmod +x ${SOURCEKIT_LSP_PATH}"
+    else
+        sklsp_path="$SOURCEKIT_LSP_PATH"
+    fi
 elif xcrun_path=$(xcrun --find sourcekit-lsp 2>/dev/null); then
     [[ -x "$xcrun_path" ]] && sklsp_path="$xcrun_path"
 elif which_path=$(command -v sourcekit-lsp 2>/dev/null); then
@@ -146,7 +160,7 @@ if [[ -n "$sklsp_path" ]]; then
     if sklsp_version=$("$sklsp_path" --version 2>/dev/null | head -1); then
         [[ -n "$sklsp_version" ]] && info "Version: $sklsp_version"
     fi
-else
+elif [[ -z "${SOURCEKIT_LSP_PATH:-}" ]]; then
     fail "sourcekit-lsp not found on PATH, via xcrun, or at SOURCEKIT_LSP_PATH." \
          "plan_rename will emit sourcekit_lsp_not_found warnings. Install via the Swift toolchain or Xcode."
 fi
