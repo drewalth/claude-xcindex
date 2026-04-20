@@ -4,7 +4,7 @@ import MCP
 // MARK: - Server builder
 
 enum XcindexServer {
-    static let name = "claude-xcindex"
+    static let name = "xcindex"
     static let version = "2.0.0"
 
     static func makeServer() -> Server {
