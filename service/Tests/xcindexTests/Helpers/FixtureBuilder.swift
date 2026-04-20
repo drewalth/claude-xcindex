@@ -40,43 +40,95 @@ enum FixtureBuilder {
     /// scratch dir, then return the resulting IndexStore path. Each
     /// call uses its own scratch root so parallel tests don't collide.
     static func buildCanaryIndex() throws -> BuiltIndex {
-        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("xcindex-fixture-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(
-            at: scratch, withIntermediateDirectories: true
+        try buildSPMIndex(
+            packagePath: canaryAppDir,
+            sourceDir: canarySourceDir,
+            reuseScratch: nil
         )
+    }
+
+    /// Build an arbitrary SPM package and return the resulting
+    /// IndexStore. Used by external-fixture tests (TCA, swift-log) that
+    /// share canary's build pipeline but target a different package root.
+    ///
+    /// - Parameters:
+    ///   - packagePath: Root of the SwiftPM package (dir containing
+    ///     `Package.swift`).
+    ///   - sourceDir: Directory used by tests to anchor `path_basename`
+    ///     comparisons. Typically `packagePath/Sources/<lib>`.
+    ///   - reuseScratch: Reuse this scratch root between test runs
+    ///     (persists the SwiftPM cache across invocations). Pass `nil`
+    ///     for a fresh throwaway dir per call.
+    static func buildSPMIndex(
+        packagePath: URL,
+        sourceDir: URL,
+        reuseScratch: URL?
+    ) throws -> BuiltIndex {
+        let scratch: URL
+        if let reuseScratch {
+            try FileManager.default.createDirectory(
+                at: reuseScratch, withIntermediateDirectories: true
+            )
+            scratch = reuseScratch
+        } else {
+            scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("xcindex-fixture-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(
+                at: scratch, withIntermediateDirectories: true
+            )
+        }
 
         let swift = try resolveSwift()
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: swift)
         proc.arguments = [
             "build",
-            "--package-path", canaryAppDir.path,
+            "--package-path", packagePath.path,
             "--scratch-path", scratch.path,
             "-c", "debug",
         ]
 
+        // Drain stdout/stderr concurrently. Without this, big builds
+        // (TCA with macro deps) overflow the 16KB pipe buffer and
+        // swift-build blocks on stdout write, deadlocking
+        // waitUntilExit(). Canary is small enough to fit inside one
+        // buffer, which is why this bug only surfaces on heavy builds.
         let stderr = Pipe()
         let stdout = Pipe()
         proc.standardError = stderr
         proc.standardOutput = stdout
 
+        let stderrBuffer = DrainingBuffer()
+        let stdoutBuffer = DrainingBuffer()
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                stderrBuffer.append(data)
+            }
+        }
+        stdout.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+            } else {
+                stdoutBuffer.append(data)
+            }
+        }
+
         try proc.run()
         proc.waitUntilExit()
 
+        // Detach the handlers so they don't fire against a closed FD.
+        stderr.fileHandleForReading.readabilityHandler = nil
+        stdout.fileHandleForReading.readabilityHandler = nil
+
         guard proc.terminationStatus == 0 else {
-            let err = String(
-                data: stderr.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            ) ?? ""
-            let out = String(
-                data: stdout.fileHandleForReading.readDataToEndOfFile(),
-                encoding: .utf8
-            ) ?? ""
             throw FixtureError.swiftBuildFailed(
                 status: proc.terminationStatus,
-                stderr: err,
-                stdout: out
+                stderr: stderrBuffer.string(),
+                stdout: stdoutBuffer.string()
             )
         }
 
@@ -86,11 +138,83 @@ enum FixtureBuilder {
         // scanning instead of hard-coding.
         let storePath = try locateIndexStore(in: scratch)
 
+        // reuseScratch = nil: scratch is throwaway, cleanupRoot should
+        // remove it. reuseScratch = non-nil: caller manages lifetime,
+        // don't blow away cached builds between runs.
+        let cleanupRoot = reuseScratch == nil ? scratch : URL(fileURLWithPath: "/dev/null")
+
         return BuiltIndex(
             storePath: storePath,
-            sourceDir: canarySourceDir.path,
-            cleanupRoot: scratch
+            sourceDir: sourceDir.path,
+            cleanupRoot: cleanupRoot
         )
+    }
+
+    // MARK: - External fixtures (TCA, swift-log, …)
+
+    /// Build an IndexStore for a pre-cloned external SwiftPM fixture.
+    /// Skips gracefully if the checkout isn't present so local
+    /// `swift test` runs don't require every developer to fetch the
+    /// fixture. CI spins up the checkout explicitly via
+    /// `scripts/fetch-fixture.sh <name>`.
+    ///
+    /// Discovery priority:
+    ///   1. `<NAME>_FIXTURE_DIR` env var (uppercased, e.g. `TCA_FIXTURE_DIR`).
+    ///   2. Newest directory under
+    ///      `~/Library/Caches/claude-xcindex/<name>-*` containing
+    ///      a `Package.swift`.
+    ///
+    /// Returns `nil` when no checkout resolves.
+    static func buildExternalIndexIfAvailable(name: String) throws -> BuiltIndex? {
+        guard let checkoutPath = locateExternalCheckout(name: name) else { return nil }
+
+        let scratch = externalScratchRoot(name: name)
+        let sourceDir = checkoutPath.appendingPathComponent("Sources")
+
+        return try buildSPMIndex(
+            packagePath: checkoutPath,
+            sourceDir: sourceDir,
+            reuseScratch: scratch
+        )
+    }
+
+    static func locateExternalCheckout(name: String) -> URL? {
+        let fm = FileManager.default
+        let env = ProcessInfo.processInfo.environment
+
+        let envKey = "\(name.uppercased().replacingOccurrences(of: "-", with: "_"))_FIXTURE_DIR"
+        if let override = env[envKey], !override.isEmpty {
+            let url = URL(fileURLWithPath: override)
+            if fm.fileExists(atPath: url.appendingPathComponent("Package.swift").path) {
+                return url
+            }
+        }
+
+        let home = fm.homeDirectoryForCurrentUser
+        let cacheDir = home.appendingPathComponent("Library/Caches/claude-xcindex")
+        guard let entries = try? fm.contentsOfDirectory(
+            at: cacheDir,
+            includingPropertiesForKeys: nil
+        ) else {
+            return nil
+        }
+        let prefix = "\(name)-"
+        for entry in entries.sorted(by: { $0.lastPathComponent > $1.lastPathComponent }) {
+            guard entry.lastPathComponent.hasPrefix(prefix) else { continue }
+            let pkg = entry.appendingPathComponent("Package.swift")
+            if fm.fileExists(atPath: pkg.path) {
+                return entry
+            }
+        }
+        return nil
+    }
+
+    /// Persistent scratch for incremental builds — one stable dir per
+    /// fixture name so different pinned SHAs share cache state but
+    /// fixtures don't step on each other.
+    private static func externalScratchRoot(name: String) -> URL {
+        URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("xcindex-\(name)-build")
     }
 
     private static func locateIndexStore(in scratch: URL) throws -> String {
@@ -154,6 +278,26 @@ struct BuiltIndex {
 
     func cleanup() {
         try? FileManager.default.removeItem(at: cleanupRoot)
+    }
+}
+
+/// Thread-safe Data accumulator used by the pipe-draining handlers.
+/// Pipe readability callbacks fire on an arbitrary Dispatch queue, so
+/// a plain `var data = Data()` is a data race waiting to happen.
+private final class DrainingBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        data.append(chunk)
+        lock.unlock()
+    }
+
+    func string() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }
 

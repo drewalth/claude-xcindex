@@ -1,0 +1,26 @@
+{
+  "fixture": "TCA",
+  "fixture_source": "https://github.com/pointfreeco/swift-composable-architecture",
+  "upstream": {
+    "tag": "1.25.5",
+    "sha": "1eaa6fa2ee57ac42843283b9fd3457af408c858d",
+    "pinned_on": "2026-04-20"
+  },
+  "curation_method": "stub — symbols listed below need hand-curation against the pinned checkout, followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
+  "generated_at": "2026-04-20T00:00:00Z",
+  "caveats": [
+    "Protocol-default-implementation witnesses are out of scope for v1.1.x. TCA makes heavy use of macros and protocol-oriented design, so ground truth here should flag any site where we deliberately omitted witnesses in `excluded_ranges` below.",
+    "Macro-generated call sites are the LSP reconciliation layer's job. Ground truth records only what indexstore can reach; LSP-only ranges land under the yellow-lsp-only tier at runtime.",
+    "Every entry in `symbols` starts with `needs_verification: true`. Flip to false only after a reviewer has inspected the checkout and confirmed the expected_ranges are exhaustive for the symbol."
+  ],
+  "symbols": [
+    {
+      "description": "STUB — needs ground truth curation against the pinned TCA checkout. Left as an empty-expected-ranges sentinel so the harness builds + resolves the USR but treats the coverage number as informational until filled in.",
+      "symbol_query": "Reduce",
+      "kind": "struct",
+      "new_name": "Reducer1",
+      "needs_verification": true,
+      "expected_ranges": []
+    }
+  ]
+}
