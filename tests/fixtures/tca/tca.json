@@ -6,14 +6,35 @@
     "sha": "1eaa6fa2ee57ac42843283b9fd3457af408c858d",
     "pinned_on": "2026-04-20"
   },
-  "curation_method": "stub — symbols listed below need hand-curation against the pinned checkout, followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
+  "curation_method": "One symbol (Box) hand-curated against the pinned SHA. Remaining stubs need ground truth curation followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
   "generated_at": "2026-04-20T00:00:00Z",
   "caveats": [
     "Protocol-default-implementation witnesses are out of scope for v1.1.x. TCA makes heavy use of macros and protocol-oriented design, so ground truth here should flag any site where we deliberately omitted witnesses in `excluded_ranges` below.",
     "Macro-generated call sites are the LSP reconciliation layer's job. Ground truth records only what indexstore can reach; LSP-only ranges land under the yellow-lsp-only tier at runtime.",
-    "Every entry in `symbols` starts with `needs_verification: true`. Flip to false only after a reviewer has inspected the checkout and confirmed the expected_ranges are exhaustive for the symbol."
+    "Stub entries keep `needs_verification: true`. Flip to false only after a reviewer has inspected the checkout and confirmed the expected_ranges are exhaustive for the symbol."
   ],
   "symbols": [
+    {
+      "description": "Internal helper type with exactly two source occurrences in the pinned tree: its own declaration in Internal/Box.swift and a single generic instantiation inside Core.swift. Picked as the first verified TCA fixture entry because it's unreachable from macros and public API, so renaming it exercises the planner's plain-identifier path without macro noise.",
+      "symbol_query": "Box",
+      "kind": "class",
+      "new_name": "TCABox",
+      "needs_verification": false,
+      "expected_ranges": [
+        {
+          "path_basename": "Box.swift",
+          "line": 1,
+          "column": 13,
+          "role": "definition"
+        },
+        {
+          "path_basename": "Core.swift",
+          "line": 124,
+          "column": 25,
+          "role": "reference"
+        }
+      ]
+    },
     {
       "description": "STUB — needs ground truth curation against the pinned TCA checkout. Left as an empty-expected-ranges sentinel so the harness builds + resolves the USR but treats the coverage number as informational until filled in.",
       "symbol_query": "Reduce",

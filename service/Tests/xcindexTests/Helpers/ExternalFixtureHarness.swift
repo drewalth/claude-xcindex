@@ -308,6 +308,12 @@ enum ExternalFixtureHarness {
 
         let sloMs = Self.resolvePlanSlo()
         for result in perSymbol where !result.needsVerification {
+            // Authoring guard: a verified entry with no expected_ranges
+            // auto-passes the recall check (1.0 / 1.0) — that's a
+            // curation bug, not a green signal. Flip needs_verification
+            // back to true or add at least one ground-truth range.
+            #expect(result.expectedCount > 0,
+                    "\(truth.fixture) verified symbol '\(result.symbolQuery)' has needs_verification=false but no expected_ranges — either curate the ground truth or set needs_verification=true.")
             #expect(result.recall == 1.0,
                     "\(truth.fixture) verified symbol '\(result.symbolQuery)' dropped to recall=\(result.recall); missing: \(result.falseNegatives)")
             if let elapsed = result.planElapsedMs {

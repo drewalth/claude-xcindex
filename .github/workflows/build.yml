@@ -78,7 +78,7 @@ jobs:
         with:
           name: coverage-summary
           path: tests/coverage/coverage-summary.json
-          if-no-files-found: warn
+          if-no-files-found: error
 
   external-coverage:
     # Matrix over external SwiftPM fixtures pinned under
@@ -149,23 +149,37 @@ jobs:
           export ${{ steps.pin.outputs.env_key }}="$FIXTURE_DIR"
           swift test --filter ${{ matrix.suite }}
 
-      - name: Enforce verified-symbol recall
-        # Non-stub entries must hit recall=1.0. Stub symbols are
-        # informational; flip needs_verification=false in the fixture
-        # JSON once a reviewer has curated the expected_ranges.
+      - name: Enforce verified-symbol recall + floor
+        # Every fixture must carry at least MIN_VERIFIED curated entries
+        # (needs_verification=false with non-empty expected_ranges) so
+        # the harness stays a real signal rather than an empty
+        # auto-pass. Stub entries (needs_verification=true) are still
+        # allowed but do not count toward the floor.
         run: |
           summary="${{ matrix.summary }}"
           if [[ ! -f "$summary" ]]; then
             echo "ERROR: $summary was not produced by the ${{ matrix.name }} run." >&2
             exit 1
           fi
-          SUMMARY_PATH="$summary" python3 - <<'PY'
+          SUMMARY_PATH="$summary" MIN_VERIFIED=1 FIXTURE_NAME="${{ matrix.name }}" python3 - <<'PY'
           import json, os, sys
+          min_verified = int(os.environ["MIN_VERIFIED"])
+          fixture_name = os.environ["FIXTURE_NAME"]
           data = json.load(open(os.environ["SUMMARY_PATH"]))
-          verified = [s for s in data["per_symbol"] if not s["needs_verification"]]
-          if not verified:
-              print(f"No verified symbols yet in {data['fixture']} — skipping recall gate.")
-              sys.exit(0)
+          per_symbol = data.get("per_symbol", [])
+          if not per_symbol:
+              print(f"ERROR: {fixture_name} coverage summary has no per_symbol entries.", file=sys.stderr)
+              sys.exit(1)
+          verified = [s for s in per_symbol if not s["needs_verification"]]
+          if len(verified) < min_verified:
+              print(
+                  f"ERROR: {fixture_name} has {len(verified)} verified "
+                  f"symbol(s); need at least {min_verified}. "
+                  "Curate one entry (set needs_verification=false and fill "
+                  f"expected_ranges) in tests/fixtures/{fixture_name}/{fixture_name}.json.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
           failures = [s for s in verified if s["recall"] < 1.0]
           for s in failures:
               print(f"{data['fixture']} verified symbol {s['symbol_query']!r}: recall={s['recall']}, missing={s['false_negatives']}")
@@ -178,7 +192,7 @@ jobs:
         with:
           name: ${{ matrix.name }}-coverage-summary
           path: ${{ matrix.summary }}
-          if-no-files-found: warn
+          if-no-files-found: error
 
   release:
     name: release

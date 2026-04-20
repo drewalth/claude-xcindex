@@ -6,14 +6,35 @@
     "sha": "5073617dac96330a486245e4c0179cb0a6fd2256",
     "pinned_on": "2026-04-20"
   },
-  "curation_method": "stub — symbols listed below need hand-curation against the pinned checkout, followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
+  "curation_method": "One symbol (_SwiftLogSendable) hand-curated against the pinned SHA. Remaining stubs need ground truth curation followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
   "generated_at": "2026-04-20T00:00:00Z",
   "caveats": [
     "swift-log is intentionally small and macro-free — a clean regression target for non-macro Swift. If the planner's basic range collection breaks, this fixture catches it before TCA's louder failure modes do.",
     "Protocol-default-implementation witnesses are out of scope for v1.1.x; log-handler types conform to LogHandler and their method implementations are witnesses. Ground truth should omit those witness sites and record them under `caveats` if a reviewer adds them.",
-    "Every entry in `symbols` starts with `needs_verification: true`. Flip to false only after a reviewer has inspected the checkout and confirmed the expected_ranges are exhaustive for the symbol."
+    "Stub entries keep `needs_verification: true`. Flip to false only after a reviewer has inspected the checkout and confirmed the expected_ranges are exhaustive for the symbol."
   ],
   "symbols": [
+    {
+      "description": "Internal marker protocol with exactly two occurrences in the source tree: its own declaration in MetadataProvider.swift and a single retroactive conformance on Logger.MetadataProvider. Picked as the first verified fixture entry because the surface is small enough to hand-verify and the protocol's `@preconcurrency` attribute exercises the planner's attribute-prefix column arithmetic.",
+      "symbol_query": "_SwiftLogSendable",
+      "kind": "protocol",
+      "new_name": "_SwiftLogSendableMarker",
+      "needs_verification": false,
+      "expected_ranges": [
+        {
+          "path_basename": "MetadataProvider.swift",
+          "line": 31,
+          "column": 26,
+          "role": "definition"
+        },
+        {
+          "path_basename": "MetadataProvider.swift",
+          "line": 60,
+          "column": 37,
+          "role": "reference"
+        }
+      ]
+    },
     {
       "description": "STUB — Logger is the public entry point of swift-log; renaming it touches every user of the library. This stub resolves its USR against the pinned checkout so the harness reports how many reference sites the planner surfaces, but the expected_ranges list needs hand-curation.",
       "symbol_query": "Logger",
