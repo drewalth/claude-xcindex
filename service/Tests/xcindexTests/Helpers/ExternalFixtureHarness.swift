@@ -149,7 +149,7 @@ struct ExternalAggregate: Codable {
     let precision: Double
     /// Max wall time across every `plan` call in this run (ms). Useful
     /// as a headline SLO number; p50/p95 would need more symbols
-    /// than v1.1.x fixtures carry to be meaningful.
+    /// than current fixtures carry to be meaningful.
     let maxPlanElapsedMs: Double?
 
     enum CodingKeys: String, CodingKey {

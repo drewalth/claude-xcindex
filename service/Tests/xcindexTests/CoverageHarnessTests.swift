@@ -9,9 +9,6 @@ import Testing
 /// hand-verified expected ranges, and writes a summary to
 /// `tests/coverage/coverage-summary.json` (relative to the repo root).
 ///
-/// This is v1.1 step 3. The Swift-version matrix + CI workflow land
-/// in step 12; this suite is the logic underneath that workflow.
-///
 /// Range comparison uses a normalized tuple of
 /// `(path_basename, line, column)` — path prefixes are randomized per
 /// test run (SwiftPM scratch dir), so full paths aren't comparable.

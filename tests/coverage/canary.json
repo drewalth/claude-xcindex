@@ -4,7 +4,7 @@
   "generated_at": "2026-04-19",
   "curation_method": "Hand-verified from source inspection. For each rename target, every textual occurrence of the symbol's base name in the canary sources is listed. Column values are 1-indexed UTF-8 columns, matching IndexStoreDB's utf8Column convention.",
   "caveats": [
-    "v1.1.x scope does NOT follow conformance witnesses (protocol default impls, retroactive witnesses). Renames of protocol methods or protocol types will miss witness sites — those are flagged in Reviewer Concerns and handled in v1.2.",
+    "Current scope does NOT follow conformance witnesses (protocol default impls, retroactive witnesses). Renames of protocol methods or protocol types miss witness sites — those are flagged in Reviewer Concerns and tracked as a separate follow-up.",
     "Per the outside voice, single-human curation from observing the tool's output is circular. These entries were written before running plan_rename and are re-verifiable by any reader against the cited source lines."
   ],
   "symbols": [

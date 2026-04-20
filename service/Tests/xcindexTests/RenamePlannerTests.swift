@@ -8,14 +8,14 @@ import Testing
 ///   • the happy-path tier assignment (green-indexstore by default)
 ///   • the refusal cases (env kill switch, invalid identifiers, SDK
 ///     paths, synthesized symbols) exposed as the `{reason, message,
-///     remediation}` triple documented in the v1.1 design
+///     remediation}` triple
 ///   • summary counting
 ///   • red-stale escalation for session-edited files
 ///   • JSON round-trip for the full plan shape
 ///
-/// The LSP-reconciliation tier labels (green-verified, yellow-*) are
-/// covered in a later step that wires in the LSPClient. This suite
-/// intentionally operates on the indexstore-only code path.
+/// LSP-reconciliation tier labels (green-verified, yellow-*) are
+/// covered in `RequestProcessorTests`. This suite intentionally
+/// operates on the indexstore-only code path.
 @Suite("RenamePlanner", .serialized)
 struct RenamePlannerTests {
     // MARK: - Helpers

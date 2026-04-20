@@ -283,8 +283,13 @@ struct RenamePlanner {
 
         // LSP: 0-indexed line + utf16 character. IndexStoreDB: 1-indexed
         // line + utf8 column. The +1 alignment is exact for pure-ASCII
-        // identifiers; non-ASCII names are downgraded to yellow elsewhere
-        // in the planner, so utf16/utf8 divergence never lands here.
+        // lines. When a line contains non-ASCII content (the identifier
+        // itself or any preceding characters), the LSP utf16 index and
+        // indexstore utf8 column diverge and this set-membership key
+        // won't match — the range stays at its original tier instead of
+        // being upgraded to green-verified, which is the conservative
+        // behavior we want. The column-encoding contract on the output
+        // is documented on `RenameRange`.
         func realpath(_ path: String) -> String {
             (path as NSString).resolvingSymlinksInPath
         }
@@ -485,6 +490,15 @@ struct IndexFreshness: Codable {
     let filesEditedThisSession: Int
 }
 
+/// Column-encoding contract: for `source == .indexstore`, `column` and
+/// `endColumn` are 1-indexed UTF-8 byte columns (IndexStoreDB native).
+/// For `source == .sourcekitLsp` (only `.yellowLspOnly` ranges today),
+/// they are 1-indexed UTF-16 code units (LSP native, `character + 1`).
+/// The units coincide for pure-ASCII lines; a consumer applying
+/// byte-oriented edits on lines containing non-ASCII content must
+/// verify yellow ranges before applying — `.yellowLspOnly` already
+/// requires manual review, and `.reasons` carries `sourcekitLspOnly`
+/// so the LSP provenance is discoverable in the plan itself.
 struct RenameRange: Codable {
     let path: String
     let line: Int

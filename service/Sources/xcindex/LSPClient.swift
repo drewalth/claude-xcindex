@@ -118,9 +118,22 @@ actor LSPClient {
             ),
             stderrLoggingCategory: "xcindex-lsp",
             client: handler,
-            terminationHandler: { _ in
-                // Termination handler fires asynchronously; `close()`
-                // is already called internally. Nothing for us to do.
+            terminationHandler: { reason in
+                // Surface unexpected exits (crash, OOM, SIGKILL from
+                // the OS) to stderr so operators see *why* the next
+                // MCP call degraded to `.sourcekitLspProcessTerminated`.
+                // Expected shutdown paths set state to `.shuttingDown`
+                // and drive termination themselves; we can't read that
+                // actor-isolated flag from this non-isolated callback,
+                // so we always log — a duplicate line during normal
+                // shutdown is cheap, and silence during a crash is not.
+                let detail: String
+                switch reason {
+                case .exited(let code): detail = "exit \(code)"
+                case .uncaughtSignal: detail = "uncaught signal"
+                }
+                let line = "xcindex-lsp: sourcekit-lsp exited (\(detail))\n"
+                FileHandle.standardError.write(Data(line.utf8))
             }
         )
 

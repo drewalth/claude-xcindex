@@ -240,6 +240,18 @@ When capped, `truncated` is `true` and `summary` still reflects the
 full counts — re-invoke with a larger `maxRanges` to page through the
 rest.
 
+### Column encoding
+
+For `source: "indexstore"` ranges, `column` and `endColumn` are
+1-indexed **UTF-8 byte columns** (IndexStoreDB native). For
+`source: "sourcekit-lsp"` ranges — only emitted at the
+`yellow-lsp-only` tier today — they are 1-indexed **UTF-16 code
+units** (LSP native). The two coincide for pure-ASCII lines. Lines
+containing non-ASCII content need manual verification before a
+byte-oriented edit; `yellow-lsp-only` already flags that requirement
+and `reasons` carries `sourcekit_lsp_only` so the provenance is
+discoverable inside the plan itself.
+
 ### Tiers
 
 | Tier                  | Meaning                                                      |
