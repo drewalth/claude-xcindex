@@ -127,11 +127,11 @@ actor LSPClient {
                 // actor-isolated flag from this non-isolated callback,
                 // so we always log — a duplicate line during normal
                 // shutdown is cheap, and silence during a crash is not.
-                let detail: String
-                switch reason {
-                case .exited(let code): detail = "exit \(code)"
-                case .uncaughtSignal: detail = "uncaught signal"
-                }
+                let detail: String =
+                    switch reason {
+                    case .exited(let code): "exit \(code)"
+                    case .uncaughtSignal: "uncaught signal"
+                    }
                 let line = "xcindex-lsp: sourcekit-lsp exited (\(detail))\n"
                 FileHandle.standardError.write(Data(line.utf8))
             }
