@@ -372,8 +372,14 @@ struct RenamePlanner {
     }
 
     private func isSDKPath(_ path: String) -> Bool {
-        // Heuristic match for Xcode toolchain / SDK paths. Covers the
-        // common case; refined in a later step that consults the LSP.
+        return RenamePlanner.isSDKPath(path)
+    }
+
+    /// Heuristic match for Xcode toolchain / SDK / user-toolchain paths.
+    /// Internal so tests can exercise the classification without
+    /// arranging a real SDK-resolved USR. Covers the common cases;
+    /// LSP-backed reconciliation refines borderline results.
+    static func isSDKPath(_ path: String) -> Bool {
         let prefixes = [
             "/Applications/Xcode.app/",
             "/Applications/Xcode-beta.app/",
@@ -383,6 +389,11 @@ struct RenamePlanner {
             "/XcodeDefault.xctoolchain/",
             "/usr/lib/swift/",
             "/.sdk/",
+            // User-installed toolchains — swift.org installer drops
+            // these under ~/Library/Developer/Toolchains; swiftly
+            // manages its own toolchain tree under ~/.swiftly.
+            "/Library/Developer/Toolchains/",
+            "/.swiftly/toolchains/",
         ]
         if prefixes.contains(where: path.hasPrefix) { return true }
         if infixes.contains(where: path.contains) { return true }

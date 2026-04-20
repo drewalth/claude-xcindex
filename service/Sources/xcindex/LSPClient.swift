@@ -90,9 +90,10 @@ actor LSPClient {
     ///     initialize response before treating the spawn as failed.
     static func launch(
         workspaceRoot: URL,
+        binaryOverride: URL? = nil,
         initializeTimeout: TimeInterval = 10
     ) async throws -> LSPClient {
-        let executable = try discover()
+        let executable = try binaryOverride ?? discover()
 
         // JSONRPCConnection.start needs a MessageHandler for
         // server-initiated requests (progress, registerCapability,
@@ -143,29 +144,12 @@ actor LSPClient {
 
         let initResult: InitializeResult
         do {
-            initResult = try await withThrowingTaskGroup(of: InitializeResult.self) { group in
-                group.addTask {
-                    try await withCheckedThrowingContinuation { cont in
-                        _ = connection.send(initRequest) { result in
-                            switch result {
-                            case .success(let value):
-                                cont.resume(returning: value)
-                            case .failure(let err):
-                                cont.resume(throwing: err)
-                            }
-                        }
-                    }
-                }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: UInt64(initializeTimeout * 1_000_000_000))
-                    throw LSPClientError.initializeTimeout
-                }
-                guard let value = try await group.next() else {
-                    throw LSPClientError.initializeTimeout
-                }
-                group.cancelAll()
-                return value
-            }
+            initResult = try await sendAndRaceTimeout(
+                connection: connection,
+                request: initRequest,
+                timeout: initializeTimeout,
+                timeoutError: LSPClientError.initializeTimeout
+            )
         } catch {
             // Best-effort cleanup if initialize failed.
             connection.close()
@@ -248,30 +232,49 @@ actor LSPClient {
             context: ReferencesContext(includeDeclaration: true)
         )
 
-        return try await withThrowingTaskGroup(of: [Location].self) { group in
-            group.addTask { [connection] in
-                try await withCheckedThrowingContinuation { cont in
-                    _ = connection.send(request) { result in
-                        switch result {
-                        case .success(let value):
-                            cont.resume(returning: value)
-                        case .failure(let err):
-                            cont.resume(throwing: LSPClientError.protocolError(
-                                "\(err.code.rawValue): \(err.message)"
-                            ))
-                        }
-                    }
+        return try await Self.sendAndRaceTimeout(
+            connection: connection,
+            request: request,
+            timeout: timeout,
+            timeoutError: LSPClientError.referencesTimeout,
+            wrapResponseError: { err in
+                LSPClientError.protocolError("\(err.code.rawValue): \(err.message)")
+            }
+        )
+    }
+
+    /// Send `request` via `connection` and race the reply against a
+    /// timer. Whichever completes first wins; the loser is ignored.
+    ///
+    /// We cannot put this inside a `withThrowingTaskGroup`: the
+    /// request callback runs through `JSONRPCConnection.send`, which
+    /// is not cancellation-aware, so the child task would hang
+    /// forever when the timeout fires and the group tried to unwind.
+    /// A one-shot guard arbitrates which resumption (reply or
+    /// timeout) actually fulfills the continuation.
+    static func sendAndRaceTimeout<Request: RequestType>(
+        connection: JSONRPCConnection,
+        request: Request,
+        timeout: TimeInterval,
+        timeoutError: LSPClientError,
+        wrapResponseError: @escaping @Sendable (ResponseError) -> Error = { $0 }
+    ) async throws -> Request.Response {
+        let guardFlag = OneshotFlag()
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Request.Response, Error>) in
+            _ = connection.send(request) { result in
+                guard guardFlag.trySet() else { return }
+                switch result {
+                case .success(let value):
+                    cont.resume(returning: value)
+                case .failure(let err):
+                    cont.resume(throwing: wrapResponseError(err))
                 }
             }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                throw LSPClientError.referencesTimeout
+            Task {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                guard guardFlag.trySet() else { return }
+                cont.resume(throwing: timeoutError)
             }
-            guard let value = try await group.next() else {
-                throw LSPClientError.referencesTimeout
-            }
-            group.cancelAll()
-            return value
         }
     }
 
@@ -288,20 +291,19 @@ actor LSPClient {
 
     /// Send `shutdown` + `exit` and wait briefly for the process to
     /// terminate. Idempotent: a second call after teardown is a no-op.
-    /// Any failure during the handshake is swallowed because we're
-    /// already tearing down.
+    /// The shutdown request itself is timeout-bounded so a wedged
+    /// server can't keep us blocked here — we'll still fall through
+    /// to SIGTERM/SIGKILL escalation below.
     func shutdown() async {
         guard state == .running else { return }
         state = .shuttingDown
 
-        _ = try? await withCheckedThrowingContinuation { (cont: CheckedContinuation<ShutdownRequest.Response, Error>) in
-            _ = connection.send(ShutdownRequest()) { result in
-                switch result {
-                case .success(let value): cont.resume(returning: value)
-                case .failure(let err): cont.resume(throwing: err)
-                }
-            }
-        }
+        _ = try? await Self.sendAndRaceTimeout(
+            connection: connection,
+            request: ShutdownRequest(),
+            timeout: 0.5,
+            timeoutError: LSPClientError.notRunning
+        )
         connection.send(ExitNotification())
         connection.close()
 
@@ -327,6 +329,25 @@ actor LSPClient {
         xcindexUntrackChildPID(process.processIdentifier)
         openedDocuments.removeAll()
         state = .terminated
+    }
+}
+
+// MARK: - OneshotFlag
+//
+// Trivially-Sendable atomic "set-once" flag. Used to arbitrate races
+// between a JSON-RPC reply callback and a timeout task — the first
+// caller to `trySet()` proceeds; the loser no-ops.
+
+final class OneshotFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isSet = false
+
+    func trySet() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isSet else { return false }
+        isSet = true
+        return true
     }
 }
 

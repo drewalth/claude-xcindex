@@ -210,7 +210,7 @@ actor RequestProcessor {
         do {
             client = try await lspClient(for: workspaceRoot)
         } catch {
-            let (code, stderrLine) = diagnoseLSPError(error, phase: "launch")
+            let (code, stderrLine) = Self.diagnoseLSPError(error, phase: "launch")
             FileHandle.standardError.write(Data(
                 "xcindex-lsp: skipping reconciliation — \(stderrLine)\n".utf8
             ))
@@ -247,7 +247,7 @@ actor RequestProcessor {
             let reconciled = RenamePlanner.reconcile(plan, with: lspRefs, lspConsulted: true)
             return withWarnings(reconciled, appending: extras)
         } catch {
-            let (code, stderrLine) = diagnoseLSPError(error, phase: "references")
+            let (code, stderrLine) = Self.diagnoseLSPError(error, phase: "references")
             FileHandle.standardError.write(Data(
                 "xcindex-lsp: \(stderrLine)\n".utf8
             ))
@@ -268,7 +268,9 @@ actor RequestProcessor {
     /// through to the `sourcekit_lsp_error` catch-all. Adding a new
     /// `LSPClientError` case without handling it here triggers a
     /// compiler warning — keep the taxonomy honest.
-    private func diagnoseLSPError(_ error: Error, phase: String) -> (code: String, stderr: String) {
+    ///
+    /// Internal for unit-test coverage of the taxonomy mapping.
+    static func diagnoseLSPError(_ error: Error, phase: String) -> (code: String, stderr: String) {
         if let lspError = error as? LSPClientError {
             switch lspError {
             case .binaryNotFound:

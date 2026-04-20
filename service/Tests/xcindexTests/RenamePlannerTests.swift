@@ -430,17 +430,18 @@ struct RenamePlannerTests {
         )
     }
 
-    @Test("isSDKPath heuristic recognizes Xcode toolchain paths")
+    @Test("isSDKPath heuristic recognizes Xcode, CommandLineTools, and user toolchain paths")
     func sdkHeuristic() {
-        // Use the planner's private heuristic indirectly via plan() +
-        // an artificial SDK-looking definition. We can't easily inject
-        // a real SDK-resolved USR into the canary, but we can verify
-        // the heuristic shape via the refusal message on a symbol whose
-        // def path matches the prefix. Covered in a later LSP-backed
-        // integration test; this is a placeholder to document intent.
-        // (Intentionally empty body — the behavior is tested end-to-end
-        // once LSP reconciliation lands.)
-        #expect(true)
+        #expect(RenamePlanner.isSDKPath("/Applications/Xcode.app/Contents/Developer/usr/lib/swift/Swift.swiftmodule/x.swiftinterface"))
+        #expect(RenamePlanner.isSDKPath("/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/lib/swift/Foundation.swiftmodule/x.swiftinterface"))
+        #expect(RenamePlanner.isSDKPath("/Library/Developer/CommandLineTools/usr/lib/swift/Darwin.swiftmodule"))
+        #expect(RenamePlanner.isSDKPath("/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift"))
+        #expect(RenamePlanner.isSDKPath("/Users/me/Library/Developer/Toolchains/swift-5.10.0-RELEASE.xctoolchain/usr/lib/swift/Foundation.swiftmodule"))
+        #expect(RenamePlanner.isSDKPath("/Users/me/.swiftly/toolchains/5.9.2/usr/lib/swift/Darwin.swiftmodule"))
+
+        #expect(!RenamePlanner.isSDKPath("/Users/me/Projects/App/Sources/UserService.swift"))
+        #expect(!RenamePlanner.isSDKPath("/tmp/my-app/Sources/Main.swift"))
+        #expect(!RenamePlanner.isSDKPath(""))
     }
 }
 

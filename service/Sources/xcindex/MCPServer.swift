@@ -254,7 +254,7 @@ private enum ToolDefinitions {
 
 // MARK: - Tool dispatch
 
-private enum Dispatcher {
+enum Dispatcher {
     static func handle(
         name: String,
         arguments: [String: Value]?,

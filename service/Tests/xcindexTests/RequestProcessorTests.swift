@@ -75,6 +75,35 @@ struct RequestProcessorTests {
     }
 }
 
+@Suite("RequestProcessor.diagnoseLSPError")
+struct DiagnoseLSPErrorTests {
+    @Test("each LSPClientError case maps to a distinct warning code")
+    func taxonomyIsExhaustive() {
+        let cases: [(LSPClientError, String)] = [
+            (.binaryNotFound, "sourcekit_lsp_not_found"),
+            (.initializeTimeout, "sourcekit_lsp_launch_failed"),
+            (.referencesTimeout, "sourcekit_lsp_timeout"),
+            (.notRunning, "sourcekit_lsp_not_running"),
+            (.processTerminated, "sourcekit_lsp_process_terminated"),
+            (.fileReadFailed(path: "/x", underlying: "boom"), "lsp_file_read_failed"),
+            (.protocolError("boom"), "sourcekit_lsp_protocol_error"),
+        ]
+        for (error, expectedCode) in cases {
+            let result = RequestProcessor.diagnoseLSPError(error, phase: "test")
+            #expect(result.code == expectedCode, "case \(error) produced \(result.code)")
+            #expect(!result.stderr.isEmpty)
+        }
+    }
+
+    @Test("non-LSPClientError falls through to the sourcekit_lsp_error catch-all")
+    func unknownErrorCatchAll() {
+        struct SomethingElse: Error {}
+        let result = RequestProcessor.diagnoseLSPError(SomethingElse(), phase: "references")
+        #expect(result.code == "sourcekit_lsp_error")
+        #expect(result.stderr.contains("references"))
+    }
+}
+
 @Suite("WorkspaceDiagnostics")
 struct WorkspaceDiagnosticsTests {
     @Test("SPM package is not classified as xcode-project")
