@@ -268,6 +268,11 @@ reconciliation. Common codes:
 - `sourcekit_lsp_not_found` — no sourcekit-lsp binary on this machine.
 - `sourcekit_lsp_launch_failed` — binary found, spawn / handshake failed.
 - `sourcekit_lsp_timeout` — references query exceeded its deadline.
+- `sourcekit_lsp_process_terminated` — child process exited between requests.
+- `sourcekit_lsp_not_running` — client was shut down before the request landed.
+- `sourcekit_lsp_protocol_error` — server returned an LSP `ResponseError`.
+- `sourcekit_lsp_error` — catch-all for unexpected error types; see stderr.
+- `lsp_file_read_failed` — could not read the declaration file for `didOpen`.
 - `compile_commands_missing` — `.xcodeproj` workspace lacks
   `compile_commands.json` or `buildServer.json`.
 - `sourcekit_lsp_needs_compile_commands` — .xcodeproj + LSP returned empty.

@@ -181,16 +181,8 @@ actor RequestProcessor {
     /// and reconciles the indexstore-only plan with the server's
     /// `textDocument/references` response. Every failure mode adds a
     /// specific diagnostic warning so callers can remediate rather
-    /// than guess why the plan wasn't LSP-verified:
-    ///
-    ///   • workspace_root_unresolved     — no projectPath/indexStorePath signal
-    ///   • sourcekit_lsp_not_found       — discover() found no binary
-    ///   • sourcekit_lsp_launch_failed   — spawn + initialize handshake failed
-    ///   • sourcekit_lsp_timeout         — references query exceeded deadline
-    ///   • compile_commands_missing      — .xcodeproj without build-server bridge
-    ///   • sourcekit_lsp_needs_compile_commands — .xcodeproj + LSP returned []
-    ///   • reconciliation_unavailable    — catch-all: LSP was not consulted
-    ///   • reconciliation_empty          — LSP answered with zero locations
+    /// than guess why the plan wasn't LSP-verified. See
+    /// `diagnoseLSPError(_:)` for the full taxonomy.
     private func reconcileWithLSP(
         plan: RenamePlan,
         usr: String,
@@ -217,24 +209,14 @@ actor RequestProcessor {
         let client: LSPClient
         do {
             client = try await lspClient(for: workspaceRoot)
-        } catch let error as LSPClientError {
-            FileHandle.standardError.write(Data(
-                "xcindex-lsp: skipping reconciliation — \(error.localizedDescription)\n".utf8
-            ))
-            let extra = error == .binaryNotFound
-                ? ["sourcekit_lsp_not_found"]
-                : ["sourcekit_lsp_launch_failed"]
-            return withWarnings(
-                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
-                appending: projectWarnings + extra
-            )
         } catch {
+            let (code, stderrLine) = diagnoseLSPError(error, phase: "launch")
             FileHandle.standardError.write(Data(
-                "xcindex-lsp: skipping reconciliation — \(error.localizedDescription)\n".utf8
+                "xcindex-lsp: skipping reconciliation — \(stderrLine)\n".utf8
             ))
             return withWarnings(
                 RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
-                appending: projectWarnings + ["sourcekit_lsp_launch_failed"]
+                appending: projectWarnings + [code]
             )
         }
 
@@ -264,23 +246,51 @@ actor RequestProcessor {
             }
             let reconciled = RenamePlanner.reconcile(plan, with: lspRefs, lspConsulted: true)
             return withWarnings(reconciled, appending: extras)
-        } catch let error as LSPClientError where error == .referencesTimeout {
-            FileHandle.standardError.write(Data(
-                "xcindex-lsp: references query timed out\n".utf8
-            ))
-            return withWarnings(
-                RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
-                appending: projectWarnings + ["sourcekit_lsp_timeout"]
-            )
         } catch {
+            let (code, stderrLine) = diagnoseLSPError(error, phase: "references")
             FileHandle.standardError.write(Data(
-                "xcindex-lsp: references query failed — \(error.localizedDescription)\n".utf8
+                "xcindex-lsp: \(stderrLine)\n".utf8
             ))
             return withWarnings(
                 RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
-                appending: projectWarnings
+                appending: projectWarnings + [code]
             )
         }
+    }
+
+    /// Maps an error raised by `LSPClient.launch(...)` or
+    /// `LSPClient.references(...)` to:
+    ///   * the warning code appended to the plan (one per failure mode)
+    ///   * the stderr line written alongside the response so callers
+    ///     can correlate the warning to the underlying failure
+    ///
+    /// Exhaustive over `LSPClientError`; unrecognized errors fall
+    /// through to the `sourcekit_lsp_error` catch-all. Adding a new
+    /// `LSPClientError` case without handling it here triggers a
+    /// compiler warning — keep the taxonomy honest.
+    private func diagnoseLSPError(_ error: Error, phase: String) -> (code: String, stderr: String) {
+        if let lspError = error as? LSPClientError {
+            switch lspError {
+            case .binaryNotFound:
+                return ("sourcekit_lsp_not_found", "binary not found: \(lspError.localizedDescription)")
+            case .initializeTimeout:
+                return ("sourcekit_lsp_launch_failed", "initialize timed out during \(phase)")
+            case .referencesTimeout:
+                return ("sourcekit_lsp_timeout", "references query timed out")
+            case .notRunning:
+                return ("sourcekit_lsp_not_running", "client already shut down during \(phase)")
+            case .processTerminated:
+                return ("sourcekit_lsp_process_terminated", "child process exited during \(phase)")
+            case .fileReadFailed(let path, let underlying):
+                return ("lsp_file_read_failed", "file read failed for \(path) during \(phase): \(underlying)")
+            case .protocolError(let detail):
+                return ("sourcekit_lsp_protocol_error", "protocol error during \(phase): \(detail)")
+            }
+        }
+        return (
+            "sourcekit_lsp_error",
+            "unexpected error during \(phase) (\(type(of: error))): \(error.localizedDescription)"
+        )
     }
 
     /// Return a copy of `plan` with `extras` appended to `warnings`,

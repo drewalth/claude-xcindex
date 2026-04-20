@@ -211,13 +211,25 @@ actor LSPClient {
         guard state == .running else {
             throw LSPClientError.notRunning
         }
+        guard process.isRunning else {
+            state = .terminated
+            throw LSPClientError.processTerminated
+        }
 
         // Load the current on-disk contents. Session-edited in-flight
         // buffers are NOT handled here (v1.1 limitation per Reviewer
         // Concerns — tier those files as red-stale in the planner).
         let uri = DocumentURI(fileURL)
         if !openedDocuments.contains(uri) {
-            let text = try String(contentsOf: fileURL, encoding: .utf8)
+            let text: String
+            do {
+                text = try String(contentsOf: fileURL, encoding: .utf8)
+            } catch {
+                throw LSPClientError.fileReadFailed(
+                    path: fileURL.path,
+                    underlying: error.localizedDescription
+                )
+            }
             let language = Self.inferLanguage(fileURL: fileURL)
             connection.send(DidOpenTextDocumentNotification(
                 textDocument: TextDocumentItem(
@@ -244,7 +256,9 @@ actor LSPClient {
                         case .success(let value):
                             cont.resume(returning: value)
                         case .failure(let err):
-                            cont.resume(throwing: err)
+                            cont.resume(throwing: LSPClientError.protocolError(
+                                "\(err.code.rawValue): \(err.message)"
+                            ))
                         }
                     }
                 }
@@ -375,6 +389,9 @@ enum LSPClientError: LocalizedError, Equatable {
     case initializeTimeout
     case referencesTimeout
     case notRunning
+    case processTerminated
+    case fileReadFailed(path: String, underlying: String)
+    case protocolError(String)
 
     var errorDescription: String? {
         switch self {
@@ -386,6 +403,12 @@ enum LSPClientError: LocalizedError, Equatable {
             return "sourcekit-lsp did not respond to textDocument/references within the deadline."
         case .notRunning:
             return "sourcekit-lsp client has been shut down; cannot issue new requests."
+        case .processTerminated:
+            return "sourcekit-lsp child process has exited; the cached client is stale."
+        case .fileReadFailed(let path, let underlying):
+            return "Failed to read \(path) for textDocument/didOpen: \(underlying)"
+        case .protocolError(let detail):
+            return "sourcekit-lsp returned a protocol error: \(detail)"
         }
     }
 }
