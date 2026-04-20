@@ -53,8 +53,16 @@ actor LSPClient {
     ///  3. `which sourcekit-lsp` (PATH).
     static func discover() throws -> URL {
         if let override = ProcessInfo.processInfo.environment["SOURCEKIT_LSP_PATH"],
-           !override.isEmpty,
-           FileManager.default.fileExists(atPath: override) {
+           !override.isEmpty {
+            guard FileManager.default.fileExists(atPath: override) else {
+                throw LSPClientError.binaryNotFound
+            }
+            // Explicit exec-bit check — Process.run on a non-executable
+            // path surfaces a generic POSIX error; fail fast with a
+            // specific taxonomy instead.
+            guard FileManager.default.isExecutableFile(atPath: override) else {
+                throw LSPClientError.binaryNotExecutable(path: override)
+            }
             return URL(fileURLWithPath: override)
         }
 
@@ -407,6 +415,7 @@ private let builtinNotifications: [NotificationType.Type] = [
 
 enum LSPClientError: LocalizedError, Equatable {
     case binaryNotFound
+    case binaryNotExecutable(path: String)
     case initializeTimeout
     case referencesTimeout
     case notRunning
@@ -418,6 +427,8 @@ enum LSPClientError: LocalizedError, Equatable {
         switch self {
         case .binaryNotFound:
             return "sourcekit-lsp not found. Set SOURCEKIT_LSP_PATH, install the Swift toolchain, or run xcindex-doctor for remediation."
+        case .binaryNotExecutable(let path):
+            return "SOURCEKIT_LSP_PATH points at \(path), but that file is not executable. `chmod +x` it or pick a different binary."
         case .initializeTimeout:
             return "sourcekit-lsp did not respond to initialize within the deadline."
         case .referencesTimeout:

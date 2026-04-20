@@ -37,10 +37,12 @@ if [[ ! -f "$FIXTURE_JSON" ]]; then
     exit 1
 fi
 
-# Parse pin + upstream URL out of the fixture JSON.
-SHA=$(python3 -c "import json; print(json.load(open('$FIXTURE_JSON'))['upstream']['sha'])")
-TAG=$(python3 -c "import json; print(json.load(open('$FIXTURE_JSON'))['upstream']['tag'])")
-REPO=$(python3 -c "import json; print(json.load(open('$FIXTURE_JSON'))['fixture_source'])")
+# Parse pin + upstream URL out of the fixture JSON. Pass the path via
+# argv rather than string interpolation so a path containing a quote
+# can't break out of the Python literal.
+SHA=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["upstream"]["sha"])' "$FIXTURE_JSON")
+TAG=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["upstream"]["tag"])' "$FIXTURE_JSON")
+REPO=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixture_source"])' "$FIXTURE_JSON")
 
 if [[ -z "$SHA" || -z "$TAG" || -z "$REPO" ]]; then
     echo "ERROR: upstream.sha / upstream.tag / fixture_source missing from $FIXTURE_JSON" >&2
@@ -77,15 +79,20 @@ if [[ -d "$TARGET/.git" ]]; then
         exit 0
     fi
     echo "Existing checkout at $TARGET is at $current, updating to $SHA..."
-    git -C "$TARGET" fetch --depth 1 origin "$SHA"
+    if ! git -C "$TARGET" fetch --depth 1 origin "$SHA"; then
+        echo "ERROR: pinned SHA $SHA unreachable from $REPO — upstream may have rebased the branch that tag $TAG tracked." >&2
+        echo "       Update tests/fixtures/${FIXTURE}/${FIXTURE}.json with a reachable SHA, or delete $TARGET and rerun." >&2
+        exit 1
+    fi
     git -C "$TARGET" checkout -q "$SHA"
 else
     echo "Cloning $FIXTURE $TAG ($SHA) into $TARGET..."
     git clone --depth 1 --branch "$TAG" "$REPO" "$TARGET"
     actual=$(git -C "$TARGET" rev-parse HEAD)
     if [[ "$actual" != "$SHA" ]]; then
-        echo "WARNING: tag $TAG resolved to $actual, expected $SHA" >&2
-        echo "Upstream may have re-tagged. Update $FIXTURE.json if this is intentional." >&2
+        echo "ERROR: tag $TAG resolved to $actual, expected $SHA." >&2
+        echo "       Upstream has re-tagged. Update tests/fixtures/${FIXTURE}/${FIXTURE}.json with the new SHA and rerun." >&2
+        exit 1
     fi
 fi
 

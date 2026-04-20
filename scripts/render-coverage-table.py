@@ -28,8 +28,16 @@ def load_summaries() -> list[dict[str, Any]]:
     """Return one dict per coverage summary file, sorted by fixture name."""
     summaries: list[dict[str, Any]] = []
     for path in sorted(COVERAGE_DIR.glob("*coverage-summary.json")):
-        with path.open() as fp:
-            summaries.append({"path": path, "data": json.load(fp)})
+        try:
+            with path.open() as fp:
+                data = json.load(fp)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(
+                f"ERROR: failed to parse coverage summary {path}: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        summaries.append({"path": path, "data": data})
     return summaries
 
 

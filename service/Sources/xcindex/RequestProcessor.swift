@@ -275,6 +275,8 @@ actor RequestProcessor {
             switch lspError {
             case .binaryNotFound:
                 return ("sourcekit_lsp_not_found", "binary not found: \(lspError.localizedDescription)")
+            case .binaryNotExecutable(let path):
+                return ("sourcekit_lsp_not_found", "binary not executable at \(path)")
             case .initializeTimeout:
                 return ("sourcekit_lsp_launch_failed", "initialize timed out during \(phase)")
             case .referencesTimeout:

@@ -232,16 +232,25 @@ section "Freshness"
 index_epoch=$(stat -f "%m" "$index_store" 2>/dev/null || echo 0)
 project_dir=$(dirname "$PROJECT")
 stale=0
-while IFS= read -r -d '' f; do
-    file_epoch=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
-    (( file_epoch > index_epoch )) && stale=$((stale + 1))
-done < <(find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
-
-if (( stale == 0 )); then
-    pass "No Swift files newer than the index."
+# Pre-flight the traversal so a vanished/denied path fails loudly
+# rather than silently reporting 0 stale files. The main loop below
+# still redirects errors to /dev/null so mid-traversal transients
+# (file deleted between readdir + stat) don't spam the terminal.
+if ! find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 >/dev/null 2>&1; then
+    fail "find traversal of $project_dir failed." \
+         "Check permissions and retry; freshness results may be incomplete."
 else
-    fail "$stale Swift file(s) newer than the index." \
-         "Build the project in Xcode to refresh, or expect stale results from xcindex_* queries."
+    while IFS= read -r -d '' f; do
+        file_epoch=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
+        (( file_epoch > index_epoch )) && stale=$((stale + 1))
+    done < <(find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
+
+    if (( stale == 0 )); then
+        pass "No Swift files newer than the index."
+    else
+        fail "$stale Swift file(s) newer than the index." \
+             "Build the project in Xcode to refresh, or expect stale results from xcindex_* queries."
+    fi
 fi
 
 # -------- build-server bridge -----------------------------------------------

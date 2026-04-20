@@ -14,14 +14,23 @@ import Testing
 struct LSPClientTests {
     // MARK: - discover()
 
-    @Test("discover() honors SOURCEKIT_LSP_PATH when it points at an existing file")
+    @Test("discover() honors SOURCEKIT_LSP_PATH when it points at an executable file")
     func discoveryEnvOverride() throws {
-        // Use this test source file as the sentinel — it's guaranteed to exist.
-        let sentinel = #filePath
-        #expect(FileManager.default.fileExists(atPath: sentinel))
+        // Write a tiny executable sentinel; discover() now enforces the
+        // exec bit, so a plain source file won't do.
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("xcindex-discover-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let sentinel = dir.appendingPathComponent("fake-sourcekit-lsp")
+        try "#!/bin/sh\nexit 0\n".write(to: sentinel, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: sentinel.path
+        )
 
         let previous = ProcessInfo.processInfo.environment["SOURCEKIT_LSP_PATH"]
-        setenv("SOURCEKIT_LSP_PATH", sentinel, 1)
+        setenv("SOURCEKIT_LSP_PATH", sentinel.path, 1)
         defer {
             if let previous {
                 setenv("SOURCEKIT_LSP_PATH", previous, 1)
@@ -31,7 +40,42 @@ struct LSPClientTests {
         }
 
         let resolved = try LSPClient.discover()
-        #expect(resolved.path == sentinel)
+        #expect(resolved.path == sentinel.path)
+    }
+
+    @Test("discover() throws .binaryNotExecutable when the override points at a non-executable file")
+    func discoveryEnvOverrideNotExecutable() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("xcindex-discover-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let sentinel = dir.appendingPathComponent("not-executable")
+        try "".write(to: sentinel, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: sentinel.path
+        )
+
+        let previous = ProcessInfo.processInfo.environment["SOURCEKIT_LSP_PATH"]
+        setenv("SOURCEKIT_LSP_PATH", sentinel.path, 1)
+        defer {
+            if let previous {
+                setenv("SOURCEKIT_LSP_PATH", previous, 1)
+            } else {
+                unsetenv("SOURCEKIT_LSP_PATH")
+            }
+        }
+
+        do {
+            _ = try LSPClient.discover()
+            Issue.record("expected .binaryNotExecutable")
+        } catch let error as LSPClientError {
+            if case .binaryNotExecutable(let path) = error {
+                #expect(path == sentinel.path)
+            } else {
+                Issue.record("expected .binaryNotExecutable, got \(error)")
+            }
+        }
     }
 
     @Test("discover() throws .binaryNotFound when nothing resolves")

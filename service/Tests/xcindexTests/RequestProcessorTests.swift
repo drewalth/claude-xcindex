@@ -81,6 +81,7 @@ struct DiagnoseLSPErrorTests {
     func taxonomyIsExhaustive() {
         let cases: [(LSPClientError, String)] = [
             (.binaryNotFound, "sourcekit_lsp_not_found"),
+            (.binaryNotExecutable(path: "/bin/false"), "sourcekit_lsp_not_found"),
             (.initializeTimeout, "sourcekit_lsp_launch_failed"),
             (.referencesTimeout, "sourcekit_lsp_timeout"),
             (.notRunning, "sourcekit_lsp_not_running"),
