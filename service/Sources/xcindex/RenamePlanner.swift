@@ -467,8 +467,8 @@ struct RenameRange: Codable {
 /// locations without touching the LSP package).
 struct LSPRefLocation {
     let path: String
-    let line: Int        // 0-indexed (LSP convention)
-    let character: Int   // 0-indexed character in the line
+    let line: Int // 0-indexed (LSP convention)
+    let character: Int // 0-indexed character in the line
     let endLine: Int
     let endCharacter: Int
 }
@@ -503,7 +503,7 @@ enum RenameWarning: String, Codable, Equatable {
 
 enum RenameReason: String, Codable {
     case directReference = "direct_reference"
-    case override = "override"
+    case override
     case conformanceWitness = "conformance_witness"
     case extensionMember = "extension_member"
     case objcBridge = "objc_bridge"
@@ -618,9 +618,9 @@ enum RefusalReason {
 // MARK: - Identifier validation
 
 enum IdentifierValidator {
-    // Swift keywords that cannot be used as plain identifiers.
-    // Contextual keywords (async, await, throws) are admissible as names
-    // with backticks; we reject them here to avoid surprising the user.
+    /// Swift keywords that cannot be used as plain identifiers.
+    /// Contextual keywords (async, await, throws) are admissible as names
+    /// with backticks; we reject them here to avoid surprising the user.
     private static let keywords: Set<String> = [
         "associatedtype", "class", "deinit", "enum", "extension",
         "fileprivate", "func", "import", "init", "inout", "internal",

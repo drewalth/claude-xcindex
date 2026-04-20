@@ -391,8 +391,7 @@ actor RequestProcessor {
                     return url
                 }
                 if let contents = try? FileManager.default.contentsOfDirectory(atPath: url.path),
-                   contents.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") })
-                {
+                   contents.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }) {
                     return url
                 }
             }

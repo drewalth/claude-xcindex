@@ -20,6 +20,7 @@ let onSignal: @Sendable () -> Void = {
         exit(0)
     }
 }
+
 sigintSource.setEventHandler(handler: onSignal)
 sigtermSource.setEventHandler(handler: onSignal)
 sigintSource.resume()

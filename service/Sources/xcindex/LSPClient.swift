@@ -17,17 +17,20 @@ actor LSPClient {
         case shuttingDown
         case terminated
     }
+
     private var state: State = .running
 
-    // sourcekit-lsp owns the open-document state once notified; re-sending
-    // didOpen for the same URI in-process triggers "document already open"
-    // errors from some server builds and wastes round-trips regardless.
+    /// sourcekit-lsp owns the open-document state once notified; re-sending
+    /// didOpen for the same URI in-process triggers "document already open"
+    /// errors from some server builds and wastes round-trips regardless.
     private var openedDocuments: Set<DocumentURI> = []
 
     /// Server capabilities advertised in the initialize response.
     /// Used by the doctor command + reconciliation path to decide
     /// which semantic queries the live server supports.
-    var serverCapabilities: ServerCapabilities { capabilities }
+    var serverCapabilities: ServerCapabilities {
+        capabilities
+    }
 
     private init(connection: JSONRPCConnection, process: Process, capabilities: ServerCapabilities) {
         self.connection = connection
@@ -353,13 +356,13 @@ final class OneshotFlag: @unchecked Sendable {
 // flows through the library's default (returning methodNotFound).
 
 final class NoopMessageHandler: MessageHandler, Sendable {
-    func handle(_ notification: some NotificationType) {
+    func handle(_: some NotificationType) {
         // Ignore all server-to-client notifications.
     }
 
     func handle<Request: RequestType>(
-        _ request: Request,
-        id: RequestID,
+        _: Request,
+        id _: RequestID,
         reply: @Sendable @escaping (LSPResult<Request.Response>) -> Void
     ) {
         // Return a default-constructed success response where the

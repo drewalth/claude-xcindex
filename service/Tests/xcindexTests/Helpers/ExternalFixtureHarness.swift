@@ -325,8 +325,7 @@ enum ExternalFixtureHarness {
 
     private static func resolvePlanSlo() -> Double {
         if let override = ProcessInfo.processInfo.environment["XCINDEX_PLAN_SLO_MS"],
-           let parsed = Double(override), parsed > 0
-        {
+           let parsed = Double(override), parsed > 0 {
             return parsed
         }
         return defaultPlanSloMs
