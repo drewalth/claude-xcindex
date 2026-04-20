@@ -76,6 +76,7 @@ Exposed under `mcp__xcindex__*`. Signatures and examples in
 | `find_conformances` | All types conforming to a protocol. |
 | `blast_radius` | Minimal set of files affected by editing a file. |
 | `status` | Index freshness, DerivedData path, last-build timestamp. |
+| `plan_rename` | Semantic rename plan tiered by confidence — see [docs/coverage.md](docs/coverage.md) for what each pinned fixture surfaces. |
 
 ### Skills & hooks
 
