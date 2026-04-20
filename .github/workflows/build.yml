@@ -50,6 +50,12 @@ jobs:
 
       - name: Swift tests
         working-directory: service
+        env:
+          # External-fixture suites (TCACoverageHarness, SwiftLogCoverageHarness)
+          # are authoritatively run by the `fixture (<name>)` matrix legs, which
+          # fetch the pinned SHA and enforce the verified-symbol floor. Skip them
+          # here so this job doesn't fail on unchecked-out fixtures.
+          XCINDEX_ALLOW_FIXTURE_SKIP: "1"
         run: swift test --parallel
 
       - name: Enforce canary coverage thresholds
