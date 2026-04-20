@@ -30,6 +30,14 @@ final class IndexQuerier {
         )
     }
 
+    // MARK: - occurrences(ofUSR:roles:) primitive
+
+    /// Returns raw IndexStoreDB occurrences. Callers filter out system
+    /// occurrences, deduplicate, and map to `OccurrenceResult`.
+    func occurrences(ofUSR usr: String, roles: SymbolRole) -> [SymbolOccurrence] {
+        db.occurrences(ofUSR: usr, roles: roles)
+    }
+
     // MARK: - findRefs
 
     /// Find all occurrences of a symbol by name.
@@ -70,7 +78,7 @@ final class IndexQuerier {
         var results: [OccurrenceResult] = []
 
         for usr in usrs.sorted() {
-            let occurrences = db.occurrences(
+            let occurrences = occurrences(
                 ofUSR: usr,
                 roles: [.definition, .declaration, .reference, .call, .read, .write, .overrideOf]
             )
@@ -125,10 +133,10 @@ final class IndexQuerier {
 
     /// Return the canonical (definition) occurrence for a given USR.
     func findDefinition(usr: String) -> OccurrenceResult? {
-        let defOccurrences = db.occurrences(ofUSR: usr, roles: [.definition])
+        let defOccurrences = occurrences(ofUSR: usr, roles: [.definition])
         guard let occ = defOccurrences.first(where: { !$0.location.isSystem }) else {
             // Fall back to declaration if no definition in user code
-            let declOccurrences = db.occurrences(ofUSR: usr, roles: [.declaration])
+            let declOccurrences = occurrences(ofUSR: usr, roles: [.declaration])
             guard let decl = declOccurrences.first(where: { !$0.location.isSystem }) else {
                 return nil
             }
@@ -213,7 +221,7 @@ final class IndexQuerier {
                     let typeUSR = relation.symbol.usr
                     guard seenTypeUSRs.insert(typeUSR).inserted else { continue }
 
-                    let defs = db.occurrences(ofUSR: typeUSR, roles: [.definition])
+                    let defs = occurrences(ofUSR: typeUSR, roles: [.definition])
                     guard let def = defs.first(where: { !$0.location.isSystem }) else {
                         continue
                     }
@@ -250,7 +258,7 @@ final class IndexQuerier {
         // Step 2: for each symbol, find all reference sites outside `filePath`
         var directCallerFiles = Set<String>()
         for symbol in definedSymbols {
-            let refs = db.occurrences(
+            let refs = occurrences(
                 ofUSR: symbol.usr,
                 roles: [.reference, .call, .read, .write]
             )
@@ -266,7 +274,7 @@ final class IndexQuerier {
         for callerFile in directCallerFiles {
             let callerSymbols = db.symbols(inFilePath: callerFile)
             for sym in callerSymbols {
-                let refs = db.occurrences(ofUSR: sym.usr, roles: [.reference, .call])
+                let refs = occurrences(ofUSR: sym.usr, roles: [.reference, .call])
                 for ref in refs {
                     guard !ref.location.isSystem,
                           ref.location.path != filePath,

@@ -1,0 +1,45 @@
+{
+  "fixture": "CanaryApp",
+  "fixture_source": "service/Tests/Fixtures/CanaryApp",
+  "generated_at": "2026-04-19",
+  "curation_method": "Hand-verified from source inspection. For each rename target, every textual occurrence of the symbol's base name in the canary sources is listed. Column values are 1-indexed UTF-8 columns, matching IndexStoreDB's utf8Column convention.",
+  "caveats": [
+    "Current scope does NOT follow conformance witnesses (protocol default impls, retroactive witnesses). Renames of protocol methods or protocol types miss witness sites — those are flagged in Reviewer Concerns and tracked as a separate follow-up.",
+    "Per the outside voice, single-human curation from observing the tool's output is circular. These entries were written before running plan_rename and are re-verifiable by any reader against the cited source lines."
+  ],
+  "symbols": [
+    {
+      "description": "Rename the UserService class. Occurrences: the class declaration, and two call sites that construct an instance.",
+      "symbol_query": "UserService",
+      "kind": "class",
+      "new_name": "AccountService",
+      "expected_ranges": [
+        { "path_basename": "UserService.swift", "line": 10, "column": 7, "role": "definition" },
+        { "path_basename": "AppDelegate.swift", "line": 16, "column": 23, "role": "reference" },
+        { "path_basename": "CanaryTests.swift", "line": 11, "column": 23, "role": "reference" }
+      ]
+    },
+    {
+      "description": "Rename UserService.fetchUser(id:). Base name is 'fetchUser'. Occurrences: definition + two call sites.",
+      "symbol_query": "fetchUser(id:)",
+      "kind": "instanceMethod",
+      "new_name": "loadUser",
+      "expected_ranges": [
+        { "path_basename": "UserService.swift", "line": 17, "column": 10, "role": "definition" },
+        { "path_basename": "AppDelegate.swift", "line": 17, "column": 21, "role": "call" },
+        { "path_basename": "CanaryTests.swift", "line": 12, "column": 21, "role": "call" }
+      ]
+    },
+    {
+      "description": "Rename AppDelegate.setUp(). Base name is 'setUp'. Occurrences: base definition, the override declaration in SubDelegate (separate USR, collected via findOverrides), and a super.setUp() call from the override.",
+      "symbol_query": "setUp()",
+      "kind": "instanceMethod",
+      "new_name": "setupApp",
+      "expected_ranges": [
+        { "path_basename": "AppDelegate.swift", "line": 15, "column": 10, "role": "definition" },
+        { "path_basename": "AppDelegate.swift", "line": 22, "column": 19, "role": "override_definition" },
+        { "path_basename": "AppDelegate.swift", "line": 23, "column": 15, "role": "super_call" }
+      ]
+    }
+  ]
+}

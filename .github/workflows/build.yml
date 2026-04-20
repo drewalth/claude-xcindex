@@ -50,11 +50,159 @@ jobs:
 
       - name: Swift tests
         working-directory: service
+        env:
+          # External-fixture suites (TCACoverageHarness, SwiftLogCoverageHarness)
+          # are authoritatively run by the `fixture (<name>)` matrix legs, which
+          # fetch the pinned SHA and enforce the verified-symbol floor. Skip them
+          # here so this job doesn't fail on unchecked-out fixtures.
+          XCINDEX_ALLOW_FIXTURE_SKIP: "1"
         run: swift test --parallel
+
+      - name: Enforce canary coverage thresholds
+        # The CoverageHarnessTests suite writes tests/coverage/coverage-summary.json
+        # during `swift test`. Gate the build on aggregate recall so a regression
+        # in plan_rename's range-collection path blocks the merge instead of
+        # silently dropping canary coverage.
+        run: |
+          summary="tests/coverage/coverage-summary.json"
+          if [[ ! -f "$summary" ]]; then
+            echo "ERROR: $summary was not produced by the test run." >&2
+            exit 1
+          fi
+          recall=$(python3 -c "import json,sys; print(json.load(open('$summary'))['aggregate']['recall'])")
+          precision=$(python3 -c "import json,sys; print(json.load(open('$summary'))['aggregate']['precision'])")
+          echo "Canary recall:    $recall"
+          echo "Canary precision: $precision"
+          python3 -c "import sys; sys.exit(0 if float('$recall') >= 1.0 else 1)" \
+            || { echo "ERROR: canary recall regressed below 1.0" >&2; exit 1; }
+          python3 -c "import sys; sys.exit(0 if float('$precision') >= 1.0 else 1)" \
+            || { echo "ERROR: canary precision regressed below 1.0" >&2; exit 1; }
+
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: tests/coverage/coverage-summary.json
+          if-no-files-found: error
+
+  external-coverage:
+    # Matrix over external SwiftPM fixtures pinned under
+    # tests/fixtures/<name>/<name>.json. Each matrix leg fetches the
+    # pinned SHA, builds it through SwiftPM, and runs the fixture's
+    # CoverageHarness suite. Checkout + scratch build are cached on
+    # the pinned SHA so warm runs stay under a minute even for TCA.
+    name: fixture (${{ matrix.name }})
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: tca
+            suite: TCACoverageHarness
+            summary: tests/coverage/tca-coverage-summary.json
+          - name: swift-log
+            suite: SwiftLogCoverageHarness
+            summary: tests/coverage/swift-log-coverage-summary.json
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Read fixture pin
+        id: pin
+        run: |
+          fixture_json="tests/fixtures/${{ matrix.name }}/${{ matrix.name }}.json"
+          sha=$(python3 -c "import json; print(json.load(open('$fixture_json'))['upstream']['sha'])")
+          tag=$(python3 -c "import json; print(json.load(open('$fixture_json'))['upstream']['tag'])")
+          env_key=$(echo '${{ matrix.name }}' | tr '[:lower:]-' '[:upper:]_')_FIXTURE_DIR
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "env_key=$env_key" >> "$GITHUB_OUTPUT"
+          echo "Pinned ${{ matrix.name }} $tag ($sha) — env var: $env_key"
+
+      - name: Cache fixture checkout + scratch build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/claude-xcindex/${{ matrix.name }}-${{ steps.pin.outputs.tag }}
+            /var/folders/**/xcindex-${{ matrix.name }}-build
+          key: ${{ matrix.name }}-${{ runner.os }}-${{ steps.pin.outputs.sha }}
+          restore-keys: |
+            ${{ matrix.name }}-${{ runner.os }}-
+
+      - name: Cache SwiftPM build (xcindex)
+        uses: actions/cache@v5
+        with:
+          path: |
+            service/.build
+            ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('service/Package.resolved', 'service/Package.swift') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-
+
+      - name: Fetch fixture at pinned SHA
+        run: scripts/fetch-fixture.sh ${{ matrix.name }}
+
+      - name: Run fixture coverage harness
+        working-directory: service
+        env:
+          # <NAME>_FIXTURE_DIR. Mirrors the convention scripts/fetch-fixture.sh
+          # emits on stdout so the Swift harness finds the checkout.
+          FIXTURE_DIR: /Users/runner/Library/Caches/claude-xcindex/${{ matrix.name }}-${{ steps.pin.outputs.tag }}
+        run: |
+          export ${{ steps.pin.outputs.env_key }}="$FIXTURE_DIR"
+          swift test --filter ${{ matrix.suite }}
+
+      - name: Enforce verified-symbol recall + floor
+        # Every fixture must carry at least MIN_VERIFIED curated entries
+        # (needs_verification=false with non-empty expected_ranges) so
+        # the harness stays a real signal rather than an empty
+        # auto-pass. Stub entries (needs_verification=true) are still
+        # allowed but do not count toward the floor.
+        run: |
+          summary="${{ matrix.summary }}"
+          if [[ ! -f "$summary" ]]; then
+            echo "ERROR: $summary was not produced by the ${{ matrix.name }} run." >&2
+            exit 1
+          fi
+          SUMMARY_PATH="$summary" MIN_VERIFIED=1 FIXTURE_NAME="${{ matrix.name }}" python3 - <<'PY'
+          import json, os, sys
+          min_verified = int(os.environ["MIN_VERIFIED"])
+          fixture_name = os.environ["FIXTURE_NAME"]
+          data = json.load(open(os.environ["SUMMARY_PATH"]))
+          per_symbol = data.get("per_symbol", [])
+          if not per_symbol:
+              print(f"ERROR: {fixture_name} coverage summary has no per_symbol entries.", file=sys.stderr)
+              sys.exit(1)
+          verified = [s for s in per_symbol if not s["needs_verification"]]
+          if len(verified) < min_verified:
+              print(
+                  f"ERROR: {fixture_name} has {len(verified)} verified "
+                  f"symbol(s); need at least {min_verified}. "
+                  "Curate one entry (set needs_verification=false and fill "
+                  f"expected_ranges) in tests/fixtures/{fixture_name}/{fixture_name}.json.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          failures = [s for s in verified if s["recall"] < 1.0]
+          for s in failures:
+              print(f"{data['fixture']} verified symbol {s['symbol_query']!r}: recall={s['recall']}, missing={s['false_negatives']}")
+          sys.exit(1 if failures else 0)
+          PY
+
+      - name: Upload coverage summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-coverage-summary
+          path: ${{ matrix.summary }}
+          if-no-files-found: error
 
   release:
     name: release
-    needs: [build, lint]
+    needs: [build, lint, external-coverage]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: macos-26
     permissions:

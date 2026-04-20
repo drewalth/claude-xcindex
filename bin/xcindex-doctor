@@ -5,11 +5,18 @@
 #   1. Xcode is installed and selected.
 #   2. `libIndexStore.dylib` is reachable from xcrun.
 #   3. `swiftc` is on the path (required to build from source).
-#   4. The xcindex binary is present and executable.
-#   5. An Xcode project can be located (either via `--project` or by
+#   4. `sourcekit-lsp` is discoverable (required for plan_rename
+#      reconciliation beyond the indexstore-only baseline).
+#   5. The xcindex binary is present and executable.
+#   6. An Xcode project can be located (either via `--project` or by
 #      scanning the current working directory).
-#   6. The index store for that project exists under DerivedData.
-#   7. Source files are not newer than the index (freshness).
+#   7. The index store for that project exists under DerivedData.
+#   8. Source files are not newer than the index (freshness).
+#   9. For .xcodeproj-only projects: a build-server bridge
+#      (compile_commands.json or buildServer.json) exists so
+#      sourcekit-lsp can answer semantic queries. Missing bridge is a
+#      soft warning — passing --install offers to `brew install
+#      xcode-build-server` and run `xcode-build-server config` for you.
 #
 # Each check prints `[ OK ]` or `[FAIL]` with a remediation hint. Exits
 # with status 0 if all checks pass, 1 otherwise.
@@ -18,6 +25,7 @@
 #   bin/xcindex-doctor                           # auto-detect project
 #   bin/xcindex-doctor --project path/to/Foo.xcodeproj
 #   bin/xcindex-doctor --project path/to/Foo.xcworkspace
+#   bin/xcindex-doctor --install                 # offer to install missing bridge
 
 set -uo pipefail
 
@@ -25,6 +33,7 @@ set -uo pipefail
 
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROJECT=""
+INSTALL=0
 EXIT=0
 
 # -------- args --------------------------------------------------------------
@@ -32,6 +41,7 @@ EXIT=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --project) PROJECT="${2:-}"; shift 2 ;;
+        --install) INSTALL=1; shift ;;
         -h|--help)
             sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
             exit 0
@@ -110,6 +120,49 @@ if swiftc_path=$(xcrun --find swiftc 2>/dev/null); then
     pass "$swiftc_version"
 else
     fail "swiftc not found via xcrun." "Install Xcode command line tools: xcode-select --install"
+fi
+
+# -------- sourcekit-lsp -----------------------------------------------------
+#
+# plan_rename's LSP reconciliation tier calls textDocument/references
+# against a live sourcekit-lsp process. Without it we still return
+# green-indexstore results, but they're flagged reconciliation_unavailable.
+
+section "sourcekit-lsp"
+
+sklsp_path=""
+# The env override must be authoritative when it's set: if the user
+# points at a file that exists but isn't executable, falling through
+# to xcrun hides the real misconfiguration. Diagnose both cases
+# explicitly — the warning code in xcindex maps to a distinct
+# `sourcekit_lsp_binary_not_executable` remediation (`chmod +x`)
+# that's unrelated to "install via Xcode."
+if [[ -n "${SOURCEKIT_LSP_PATH:-}" ]]; then
+    if [[ ! -e "${SOURCEKIT_LSP_PATH}" ]]; then
+        fail "SOURCEKIT_LSP_PATH=${SOURCEKIT_LSP_PATH} does not exist." \
+             "Unset the env var or point it at a real sourcekit-lsp binary."
+    elif [[ ! -x "${SOURCEKIT_LSP_PATH}" ]]; then
+        fail "SOURCEKIT_LSP_PATH=${SOURCEKIT_LSP_PATH} is not executable." \
+             "Run: chmod +x ${SOURCEKIT_LSP_PATH}"
+    else
+        sklsp_path="$SOURCEKIT_LSP_PATH"
+    fi
+elif xcrun_path=$(xcrun --find sourcekit-lsp 2>/dev/null); then
+    [[ -x "$xcrun_path" ]] && sklsp_path="$xcrun_path"
+elif which_path=$(command -v sourcekit-lsp 2>/dev/null); then
+    sklsp_path="$which_path"
+fi
+
+if [[ -n "$sklsp_path" ]]; then
+    pass "sourcekit-lsp: $sklsp_path"
+    # `sourcekit-lsp --version` is supported on recent toolchains; older
+    # ones exit 0 on --help and nonzero on --version. Tolerate both.
+    if sklsp_version=$("$sklsp_path" --version 2>/dev/null | head -1); then
+        [[ -n "$sklsp_version" ]] && info "Version: $sklsp_version"
+    fi
+elif [[ -z "${SOURCEKIT_LSP_PATH:-}" ]]; then
+    fail "sourcekit-lsp not found on PATH, via xcrun, or at SOURCEKIT_LSP_PATH." \
+         "plan_rename will emit sourcekit_lsp_not_found warnings. Install via the Swift toolchain or Xcode."
 fi
 
 # -------- xcindex binary ----------------------------------------------------
@@ -193,16 +246,85 @@ section "Freshness"
 index_epoch=$(stat -f "%m" "$index_store" 2>/dev/null || echo 0)
 project_dir=$(dirname "$PROJECT")
 stale=0
-while IFS= read -r -d '' f; do
-    file_epoch=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
-    (( file_epoch > index_epoch )) && stale=$((stale + 1))
-done < <(find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
-
-if (( stale == 0 )); then
-    pass "No Swift files newer than the index."
+# Pre-flight the traversal so a vanished/denied path fails loudly
+# rather than silently reporting 0 stale files. The main loop below
+# still redirects errors to /dev/null so mid-traversal transients
+# (file deleted between readdir + stat) don't spam the terminal.
+if ! find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 >/dev/null 2>&1; then
+    fail "find traversal of $project_dir failed." \
+         "Check permissions and retry; freshness results may be incomplete."
 else
-    fail "$stale Swift file(s) newer than the index." \
-         "Build the project in Xcode to refresh, or expect stale results from xcindex_* queries."
+    while IFS= read -r -d '' f; do
+        file_epoch=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
+        (( file_epoch > index_epoch )) && stale=$((stale + 1))
+    done < <(find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
+
+    if (( stale == 0 )); then
+        pass "No Swift files newer than the index."
+    else
+        fail "$stale Swift file(s) newer than the index." \
+             "Build the project in Xcode to refresh, or expect stale results from xcindex_* queries."
+    fi
+fi
+
+# -------- build-server bridge -----------------------------------------------
+#
+# sourcekit-lsp answers semantic queries from the build context it can
+# reconstruct for the workspace. SwiftPM packages work out of the box.
+# .xcodeproj / .xcworkspace projects need either a committed
+# `compile_commands.json` (from xcodebuild) or a `buildServer.json`
+# generated by xcode-build-server. Without one, textDocument/references
+# returns `[]` and plan_rename downgrades to reconciliation_empty.
+
+section "Build-server bridge"
+
+workspace_root="$project_dir"
+has_package=0
+has_xcode=0
+has_bridge=0
+bridge_kind=""
+
+[[ -f "$workspace_root/Package.swift" ]] && has_package=1
+if compgen -G "$workspace_root/*.xcodeproj" >/dev/null 2>&1 \
+   || compgen -G "$workspace_root/*.xcworkspace" >/dev/null 2>&1; then
+    has_xcode=1
+fi
+
+if [[ -f "$workspace_root/compile_commands.json" ]]; then
+    has_bridge=1; bridge_kind="compile_commands.json"
+elif [[ -f "$workspace_root/buildServer.json" ]]; then
+    has_bridge=1; bridge_kind="buildServer.json"
+fi
+
+if (( has_package == 1 )); then
+    pass "SPM package — sourcekit-lsp resolves the build context directly."
+elif (( has_xcode == 1 && has_bridge == 1 )); then
+    pass "Bridge present: $bridge_kind (sourcekit-lsp will see the build context)."
+elif (( has_xcode == 1 )); then
+    # Missing bridge for .xcodeproj-only workspace. Soft-fail, then
+    # optionally offer to install.
+    fail "No compile_commands.json or buildServer.json at $workspace_root." \
+         "plan_rename will emit compile_commands_missing for this project."
+
+    # xcode-build-server availability
+    if command -v xcode-build-server >/dev/null 2>&1; then
+        info "xcode-build-server is installed — run: xcode-build-server config -project $PROJECT -scheme <scheme>"
+    elif ! command -v brew >/dev/null 2>&1; then
+        info "Install Homebrew first: https://brew.sh — then: brew install xcode-build-server"
+    elif (( INSTALL == 1 )); then
+        echo
+        echo "  Installing xcode-build-server via Homebrew…"
+        if brew install xcode-build-server; then
+            pass "xcode-build-server installed."
+            info "Run: xcode-build-server config -project $PROJECT -scheme <scheme>"
+        else
+            fail "brew install xcode-build-server failed." "See the brew output above."
+        fi
+    else
+        info "Pass --install to run: brew install xcode-build-server"
+    fi
+else
+    info "Neither SwiftPM nor an Xcode project at $workspace_root — build-server bridge not applicable."
 fi
 
 # -------- summary -----------------------------------------------------------

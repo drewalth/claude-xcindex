@@ -85,6 +85,7 @@ private enum ToolDefinitions {
         findConformances,
         blastRadius,
         status,
+        planRename,
     ]
 
     static let findReferences = Tool(
@@ -223,11 +224,44 @@ private enum ToolDefinitions {
     static let usrDescription =
         "Unified Symbol Resolution identifier obtained from find_symbol or " +
         "find_references (the 'usr' field on any result)."
+
+    static let planRename = Tool(
+        name: "plan_rename",
+        description:
+        "Build a semantic rename plan for a Swift/ObjC symbol. Returns every " +
+            "reference site (including overrides) grouped by confidence tier: " +
+            "green-indexstore for direct refs, yellow-disagreement for " +
+            "operator/subscript/label cases whose range end cannot be verified " +
+            "from the index alone, red-stale for files edited this session. " +
+            "NEVER mutates files — the returned JSON plan is an input for a " +
+            "subsequent sequence of Edit calls. Refuses on invalid identifiers, " +
+            "SDK symbols, synthesized members, or when XCINDEX_DISABLE_PLAN_RENAME=1.",
+        inputSchema: Schema.object(
+            properties: [
+                "usr": Schema.string(usrDescription),
+                "newName": Schema.string(
+                    "Proposed replacement identifier. Must be a valid Swift identifier: " +
+                        "starts with a letter or underscore, contains only letters, digits, " +
+                        "or underscores, and is not a Swift keyword."
+                ),
+                "projectPath": Schema.projectParams["projectPath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "maxRanges": Schema.integer(
+                    "Cap on the number of ranges returned (default 500, max 5000). " +
+                        "When the planner produces more, the response's `truncated` " +
+                        "field is true and `summary` still reflects the full counts; " +
+                        "re-invoke with a larger cap if you need the rest.",
+                    min: 1, max: 5000, default: 500
+                ),
+            ],
+            required: ["usr", "newName"]
+        )
+    )
 }
 
 // MARK: - Tool dispatch
 
-private enum Dispatcher {
+enum Dispatcher {
     static func handle(
         name: String,
         arguments: [String: Value]?,
@@ -250,6 +284,8 @@ private enum Dispatcher {
             return await blastRadius(args, processor)
         case "status":
             return await status(args, processor)
+        case "plan_rename":
+            return await planRename(args, processor)
         default:
             return .init(content: [text("Unknown tool: \(name)")], isError: true)
         }
@@ -512,6 +548,59 @@ private enum Dispatcher {
             lines.append("\nNo source files edited this session — index should be current.")
         }
 
+        return .init(content: [text(lines.joined(separator: "\n"))])
+    }
+
+    // MARK: plan_rename
+
+    /// Emits a pretty-printed JSON plan inside a ```json fence. A
+    /// freshness warning appends below the fence when any range path
+    /// was edited this session.
+    private static func planRename(_ args: [String: Value], _ processor: RequestProcessor) async -> CallTool.Result {
+        guard let usr = args["usr"]?.stringValue, !usr.isEmpty else {
+            return error("plan_rename requires 'usr'")
+        }
+        guard let newName = args["newName"]?.stringValue, !newName.isEmpty else {
+            return error("plan_rename requires 'newName'")
+        }
+        let maxRanges = args["maxRanges"]?.intValue ?? 500
+        let req = Request(
+            op: "planRename",
+            projectPath: args["projectPath"]?.stringValue,
+            indexStorePath: args["indexStorePath"]?.stringValue,
+            usr: usr,
+            newName: newName
+        )
+        let resp = await processor.handle(req)
+        if let err = resp.error {
+            return error(err)
+        }
+        guard let fullPlan = resp.renamePlan else {
+            return .init(content: [text("No plan returned.")])
+        }
+
+        let plan = fullPlan.capped(at: maxRanges)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let jsonString: String
+        do {
+            let data = try encoder.encode(plan)
+            jsonString = String(data: data, encoding: .utf8) ?? "{}"
+        } catch {
+            return self.error("Failed to encode rename plan: \(error.localizedDescription)")
+        }
+
+        var lines = ["```json", jsonString, "```"]
+        if plan.truncated {
+            lines.append("")
+            lines.append("⚠️  Plan truncated to \(plan.ranges.count) of \(fullPlan.ranges.count) ranges. Re-invoke with a larger `maxRanges` to see the rest.")
+        }
+        let involved = Array(Set(plan.ranges.map { $0.path }))
+        if let note = Freshness.staleNote(involvedPaths: involved) {
+            lines.append("")
+            lines.append("⚠️  \(note)")
+        }
         return .init(content: [text(lines.joined(separator: "\n"))])
     }
 

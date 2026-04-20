@@ -182,6 +182,164 @@ index health, the hooks report live edits.
 
 ---
 
+## `plan_rename`
+
+Build a semantic rename plan for a symbol identified by USR. Returns
+every reference site (including overrides) grouped by confidence tier
+so the caller can decide what to auto-apply versus flag for review.
+**Never mutates files** — the JSON plan is an input for subsequent
+`Edit` calls.
+
+**Input**
+```json
+{
+  "usr": "s:7MyApp11UserServiceC",
+  "newName": "AccountService",
+  "projectPath": "/Users/me/MyApp/MyApp.xcodeproj"
+}
+```
+
+`indexStorePath` also accepted. `projectPath` is strongly recommended
+because sourcekit-lsp's reconciliation pass needs a workspace root.
+
+**Output** — a pretty-printed JSON plan wrapped in a ```json code fence:
+
+```json
+{
+  "usr": "s:7MyApp11UserServiceC",
+  "oldName": "UserService",
+  "newName": "AccountService",
+  "generatedAt": "2026-04-20T06:13:12Z",
+  "indexFreshness": { "lastBuilt": null, "filesEditedThisSession": 0 },
+  "ranges": [
+    {
+      "path": "/Users/…/UserService.swift",
+      "line": 10,
+      "column": 7,
+      "endColumn": 18,
+      "tier": "green-verified",
+      "reasons": ["direct_reference"],
+      "source": "indexstore"
+    }
+  ],
+  "summary": {
+    "green_verified": 5,
+    "green_indexstore": 2,
+    "yellow_disagreement": 0,
+    "yellow_lsp_only": 1,
+    "red_stale": 0
+  },
+  "refusal": null,
+  "warnings": [],
+  "truncated": false
+}
+```
+
+`ranges` is capped by the `maxRanges` argument (default 500, max 5000).
+When capped, `truncated` is `true` and `summary` still reflects the
+full counts — re-invoke with a larger `maxRanges` to page through the
+rest.
+
+### Column encoding
+
+For `source: "indexstore"` ranges, `column` and `endColumn` are
+1-indexed **UTF-8 byte columns** (IndexStoreDB native). For
+`source: "sourcekit-lsp"` ranges — only emitted at the
+`yellow-lsp-only` tier today — they are 1-indexed **UTF-16 code
+units** (LSP native). The two coincide for pure-ASCII lines. Lines
+containing non-ASCII content need manual verification before a
+byte-oriented edit; `yellow-lsp-only` already flags that requirement
+and `reasons` carries `sourcekit_lsp_only` so the provenance is
+discoverable inside the plan itself.
+
+### Tiers
+
+| Tier                  | Meaning                                                      |
+| --------------------- | ------------------------------------------------------------ |
+| `green-verified`      | Indexstore and sourcekit-lsp agree — safe to auto-apply.     |
+| `green-indexstore`    | Indexstore-only match; LSP not consulted or returned empty.  |
+| `yellow-disagreement` | Indexstore and LSP disagree, or range end unverifiable.      |
+| `yellow-lsp-only`     | LSP found this range but indexstore didn't (macro sites).    |
+| `red-stale`           | File was edited this session — rebuild before trusting.      |
+
+### Refusals
+
+When the request can't produce a safe plan, `refusal` is populated
+with `{reason, message, remediation}`. Known reasons:
+
+- `disabled_by_env` — `XCINDEX_DISABLE_PLAN_RENAME=1` short-circuits.
+- `invalid_identifier` — `newName` is empty, a Swift keyword, or
+  contains non-identifier characters.
+- `synthesized_symbol_not_renameable` — the USR resolves to a
+  compiler-synthesized member with no source range.
+- `sdk_symbol_rename` — the declaration lives in an SDK path.
+- `usr_not_found` — the USR has no definition in this index.
+  Rebuild or re-resolve with `find_symbol`.
+
+### Range reasons
+
+Each range carries one or more `reasons` tagging how the occurrence
+was classified. Known codes:
+
+- `direct_reference` — plain declaration, call, or read/write site.
+- `override` — subclass override of a class method.
+- `conformance_witness` — witness declaration for a protocol
+  requirement (IndexStoreDB records both witnesses and subclass
+  overrides with `.overrideOf`; we disambiguate via the enclosing
+  type's kind).
+- `extension_member` — occurrence of the extended type at an
+  `extension` header; renaming this site requires touching the
+  extension too.
+- `macro_adjacent` — LSP-only range with no indexstore counterpart
+  (commonly macro-expanded call sites).
+- `sourcekit_lsp_only` — LSP saw this range; indexstore did not.
+- `lsp_did_not_echo` — indexstore saw this range but LSP did not
+  echo it back (the range is downgraded to yellow-disagreement).
+- `session_edited` — file was edited this Claude Code session.
+- `range_end_computed_unverified` — identifier byte length could
+  not be verified (operators, subscripts, labels).
+- `sdk_symbol`, `synthesized_symbol`, `objc_bridge`,
+  `compile_commands_missing`, `file_newer_than_unit` — additional
+  downgrade annotations.
+
+### Warnings
+
+`warnings` collects non-fatal diagnostics that describe degraded
+reconciliation. Common codes:
+
+- `reconciliation_unavailable` — sourcekit-lsp was not consulted.
+- `reconciliation_empty` — LSP answered with zero locations.
+- `workspace_root_unresolved` — neither `projectPath` nor
+  `indexStorePath` lets us pick a root for LSP.
+- `sourcekit_lsp_not_found` — no sourcekit-lsp binary on this machine.
+- `sourcekit_lsp_binary_not_executable` — `SOURCEKIT_LSP_PATH` points
+  at a file that exists but lacks the exec bit (`chmod +x` it).
+- `sourcekit_lsp_launch_failed` — binary found, spawn / handshake failed.
+- `sourcekit_lsp_timeout` — references query exceeded its deadline.
+- `sourcekit_lsp_process_terminated` — child process exited between requests.
+- `sourcekit_lsp_not_running` — client was shut down before the request landed.
+- `sourcekit_lsp_protocol_error` — server returned an LSP `ResponseError`.
+- `sourcekit_lsp_error` — catch-all for unexpected error types; see stderr.
+- `lsp_file_read_failed` — could not read the declaration file for `didOpen`.
+- `compile_commands_missing` — `.xcodeproj` workspace lacks
+  `compile_commands.json` or `buildServer.json`.
+- `sourcekit_lsp_needs_compile_commands` — .xcodeproj + LSP returned empty.
+
+Run `./bin/xcindex-doctor --install` to install `xcode-build-server`
+and wire up `compile_commands.json` for the current project.
+
+---
+
+## Environment variables
+
+| Variable                      | Effect                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `SOURCEKIT_LSP_PATH`          | Override the auto-detected sourcekit-lsp binary path.                  |
+| `XCINDEX_DISABLE_PLAN_RENAME` | Set to `1` to make `plan_rename` refuse every request (kill switch).   |
+| `CLAUDE_PROJECT_DIR`          | Overrides CWD for session-edited-file tracking across hooks and tool.  |
+
+---
+
 ## Error handling
 
 Every tool returns a plain text error in the MCP response when
