@@ -3,12 +3,6 @@ import IndexStoreDB
 
 // MARK: - RenamePlanner
 //
-// Rename plan builder. Indexstore-only first pass (v1.1 baseline).
-// SourceKit-LSP reconciliation lands in a later step and upgrades
-// green-indexstore to green-verified / yellow-* as appropriate.
-//
-// ASCII flow (v1.1 final shape; LSP leg noted for context):
-//
 //   ┌────────────────────────────────────────────────────────────┐
 //   │  plan(usr:newName:)                                         │
 //   │                                                             │
@@ -21,7 +15,7 @@ import IndexStoreDB
 //   │        • operator / non-identifier → yellow-disagreement    │
 //   │        • override / extension    → green-indexstore + reason│
 //   │        • else                    → green-indexstore         │
-//   │   6. (v1.1 step 7) LSP reconcile green-indexstore candidates│
+//   │   6. LSP reconcile green-indexstore candidates              │
 //   │   7. Emit plan + summary + optional refusal/warnings        │
 //   └────────────────────────────────────────────────────────────┘
 
@@ -30,9 +24,8 @@ struct RenamePlanner {
     let editedFiles: Set<String>
     let isDisabled: Bool
 
-    /// Construct a planner. `isDisabled` is injectable so tests can
-    /// exercise the kill-switch branch without mutating process-global
-    /// env state; at runtime the default reads XCINDEX_DISABLE_PLAN_RENAME.
+    /// `isDisabled` is injectable so tests can exercise the kill-switch
+    /// branch without mutating process-global env state.
     init(
         querier: IndexQuerier,
         editedFiles: Set<String> = Freshness.getEditedFiles(),
@@ -87,7 +80,7 @@ struct RenamePlanner {
         }
         let oldName = def.symbolName
 
-        // 4. SDK / synthesized detection (coarse, v1.1 baseline).
+        // 4. SDK / synthesized detection.
         if isSDKPath(def.path) {
             return RenamePlan.refused(
                 usr: usr, oldName: oldName, newName: newName,
@@ -103,14 +96,10 @@ struct RenamePlanner {
             )
         }
 
-        // 5. Collect all USRs that must rename together: the base USR
-        //    plus every override. IndexStoreDB assigns separate USRs to
-        //    overriding declarations, so a rename of the base must
-        //    visit each override's occurrences independently.
-        //    Conformance witnesses (protocol default implementations,
-        //    retroactive witnesses) are NOT yet followed in v1.1 step 1
-        //    and surface as a known limitation — the LSP-reconciliation
-        //    step picks up the remainder.
+        // IndexStoreDB assigns separate USRs to overriding
+        // declarations, so renaming the base means visiting each
+        // override's occurrences independently. Protocol-default
+        // witnesses are not followed here and land via LSP reconcile.
         var usrsToRename: [String] = [usr]
         let overrides = querier.findOverrides(usr: usr)
         usrsToRename.append(contentsOf: overrides.map(\.usr))
@@ -158,9 +147,8 @@ struct RenamePlanner {
         let line = occ.location.line
         let column = occ.location.utf8Column
 
-        // IndexStoreDB returns method symbol names in their full-selector
-        // form ("fetchUser(id:)"), but the source identifier at the
-        // reference site is just the base name ("fetchUser"). Strip the
+        // IndexStoreDB names methods as full selectors ("fetchUser(id:)"),
+        // but the source identifier is just the base name. Strip the
         // argument-label suffix for range-end computation.
         let baseName = Self.baseName(of: occ.symbol.name.isEmpty ? oldName : occ.symbol.name)
 
@@ -244,20 +232,18 @@ struct RenamePlanner {
 
     // MARK: - Reconciliation
 
-    /// Merge an indexstore-only plan with sourcekit-lsp locations,
-    /// upgrading / downgrading tiers per the v1.1 design:
+    /// Merge an indexstore-only plan with sourcekit-lsp locations:
     ///
     ///   • indexstore ∩ LSP agree            → green-verified
     ///   • indexstore only (LSP didn't see)  → yellow-disagreement (source=indexstore)
     ///   • LSP only (indexstore didn't see)  → yellow-lsp-only (source=sourcekit-lsp)
     ///   • red-stale ranges stay red-stale
     ///
-    /// URIs are realpath-normalized on both sides before comparison
-    /// so `/private/var/...` matches `/var/...`. If `lspLocations` is
-    /// empty (LSP not configured, or the server returned nothing),
-    /// the original plan is returned with a `warnings[]` entry so the
-    /// caller can distinguish "we didn't ask LSP" from "LSP answered
-    /// with nothing."
+    /// URIs are realpath-normalized on both sides so `/private/var/...`
+    /// matches `/var/...`. An empty `lspLocations` array with
+    /// `lspConsulted: false` returns the plan with a warnings entry so
+    /// the caller can tell "we didn't ask LSP" from "LSP answered with
+    /// nothing."
     static func reconcile(
         _ plan: RenamePlan,
         with lspLocations: [LSPRefLocation],
@@ -283,10 +269,10 @@ struct RenamePlanner {
             )
         }
 
-        // Build a set of LSP keys: (realpath, line, column) 0-indexed
-        // internally, matched to IndexStoreDB's 1-indexed convention
-        // via a +1 adjustment on line and column. LSP lines and
-        // characters are 0-indexed; indexstore line/column are 1-indexed.
+        // LSP: 0-indexed line + utf16 character. IndexStoreDB: 1-indexed
+        // line + utf8 column. The +1 alignment is exact for pure-ASCII
+        // identifiers; non-ASCII names are downgraded to yellow elsewhere
+        // in the planner, so utf16/utf8 divergence never lands here.
         func realpath(_ path: String) -> String {
             (path as NSString).resolvingSymlinksInPath
         }
@@ -294,12 +280,6 @@ struct RenamePlanner {
         var lspKeys = Set<String>()
         for loc in lspLocations {
             let normalized = realpath(loc.path)
-            // LSP uses 0-indexed line + utf16 character. IndexStoreDB
-            // uses 1-indexed line + utf8 column. The raw LSP character
-            // index is typically utf16-relative, but for pure-ASCII
-            // identifiers (the common case) utf8Column == utf16Index.
-            // Non-ASCII identifiers are downgraded to yellow elsewhere
-            // in the planner, so the +1 alignment is sound here.
             let key = "\(normalized):\(loc.line + 1):\(loc.character + 1)"
             lspKeys.insert(key)
         }

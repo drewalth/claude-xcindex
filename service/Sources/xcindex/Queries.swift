@@ -32,16 +32,8 @@ final class IndexQuerier {
 
     // MARK: - occurrences(ofUSR:roles:) primitive
 
-    /// Thin wrapper around IndexStoreDB's `occurrences(ofUSR:roles:)`.
-    ///
-    /// This is the low-level primitive for "give me every occurrence of
-    /// this exact symbol (by USR) matching these roles." It returns raw
-    /// IndexStoreDB values; callers are responsible for filtering out
-    /// system occurrences, deduplicating, and mapping to `OccurrenceResult`.
-    ///
-    /// Shared between `findRefs`, `findDefinition`, `blastRadius`, and
-    /// the v1.1 `RenamePlanner` so the single path through IndexStoreDB
-    /// is testable and behavior stays consistent across tools.
+    /// Returns raw IndexStoreDB occurrences. Callers filter out system
+    /// occurrences, deduplicate, and map to `OccurrenceResult`.
     func occurrences(ofUSR usr: String, roles: SymbolRole) -> [SymbolOccurrence] {
         db.occurrences(ofUSR: usr, roles: roles)
     }

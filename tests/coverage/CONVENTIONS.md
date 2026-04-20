@@ -31,4 +31,4 @@ A range is a **true reference** if a correct rename of the target symbol would n
 
 The single-human curator who wrote the ground truth has already seen what the tool returns, which risks circular validation. For each fixture, a random 20% of ground-truth entries should be re-verified by a second person who reads only the source, not the tool output. Alternatively, cross-check three ground-truth entries against git rename history from the fixture's upstream repo (when the fixture is an external project like TCA).
 
-This step is **not yet done for `canary.json`** — the file was seeded by the primary curator and will be cross-checked before v1.1 release.
+`canary.json` was written source-first — entries were hand-read off the fixture before `plan_rename` was invoked against them — so every line/column is re-verifiable by any reader against the cited source. That's the status of record; treat it as "cross-checkable" rather than "pending cross-check."

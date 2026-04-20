@@ -10,6 +10,11 @@ gate the build at recall 1.0. Rows marked `stub` are informational
 until a reviewer completes the second-pair-of-eyes curation
 described in [`tests/coverage/CONVENTIONS.md`](../tests/coverage/CONVENTIONS.md).
 
+**Legend.** `—` in the _Plan time_ column means the canary bypasses
+SLO timing (its tests assert recall/precision, not wall clock). Stub
+rows report `precision 0%` only because their `expected_ranges` list
+is empty — precision is meaningless until the ranges are curated.
+
 ### `CanaryApp`
 
 _recall 100% · precision 100%_

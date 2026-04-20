@@ -546,11 +546,9 @@ enum Dispatcher {
 
     // MARK: plan_rename
 
-    /// Output format per v1.1 design Decision 2: raw pretty-printed JSON
-    /// wrapped in a ```json markdown fence in a single text content item.
-    /// Claude parses the fence cleanly; humans reading the MCP tool log
-    /// see a readable structure. A freshness warning appends below the
-    /// fence when any range path was edited this session.
+    /// Emits a pretty-printed JSON plan inside a ```json fence. A
+    /// freshness warning appends below the fence when any range path
+    /// was edited this session.
     private static func planRename(_ args: [String: Value], _ processor: RequestProcessor) async -> CallTool.Result {
         guard let usr = args["usr"]?.stringValue, !usr.isEmpty else {
             return error("plan_rename requires 'usr'")

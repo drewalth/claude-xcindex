@@ -3,16 +3,6 @@ import LanguageServerProtocol
 import LanguageServerProtocolTransport
 
 // MARK: - LSPClient
-//
-// Spawns sourcekit-lsp as a subprocess and wraps the JSON-RPC connection.
-// Scope of this file (v1.1 steps 4-5): discovery, spawn, initialize /
-// initialized handshake, graceful shutdown. Reference queries and
-// reconciliation wiring land in later steps.
-//
-// The wire protocol is handled by swift-tools-protocols'
-// `JSONRPCConnection`; we don't touch Content-Length framing, message
-// ID correlation, or server-initiated request routing ourselves. See
-// the Eng Review decision (use the official library) in the design doc.
 
 /// An active, initialized sourcekit-lsp subprocess + its JSON-RPC
 /// connection. Create via `LSPClient.launch(...)`; tear down via
@@ -103,10 +93,6 @@ actor LSPClient {
     ) async throws -> LSPClient {
         let executable = try binaryOverride ?? discover()
 
-        // JSONRPCConnection.start needs a MessageHandler for
-        // server-initiated requests (progress, registerCapability,
-        // configuration). We route those through a tiny no-op handler
-        // per design Decision 1 + Reviewer Concerns.
         let handler = NoopMessageHandler()
 
         let (connection, process) = try JSONRPCConnection.start(
@@ -208,9 +194,8 @@ actor LSPClient {
             throw LSPClientError.processTerminated
         }
 
-        // Load the current on-disk contents. Session-edited in-flight
-        // buffers are NOT handled here (v1.1 limitation per Reviewer
-        // Concerns — tier those files as red-stale in the planner).
+        // Reads current on-disk contents; session-edited buffers are
+        // tiered as red-stale by the planner, not synced here.
         let uri = DocumentURI(fileURL)
         if !openedDocuments.contains(uri) {
             let text: String
@@ -369,7 +354,7 @@ final class OneshotFlag: @unchecked Sendable {
 
 final class NoopMessageHandler: MessageHandler, Sendable {
     func handle(_ notification: some NotificationType) {
-        // Ignore all server-to-client notifications for v1.1 scope.
+        // Ignore all server-to-client notifications.
     }
 
     func handle<Request: RequestType>(
