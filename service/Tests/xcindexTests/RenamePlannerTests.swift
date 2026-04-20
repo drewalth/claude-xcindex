@@ -376,7 +376,7 @@ struct RenamePlannerTests {
             range(path: "/Users/x/App/A.swift", line: 10, col: 7, tier: .greenIndexstore)
         ])
         let merged = RenamePlanner.reconcile(plan, with: [], lspConsulted: false)
-        #expect(merged.warnings.contains("reconciliation_unavailable"))
+        #expect(merged.warnings.contains(.reconciliationUnavailable))
         #expect(merged.ranges[0].tier == .greenIndexstore, "tier should not change when LSP was not consulted")
     }
 
@@ -386,7 +386,7 @@ struct RenamePlannerTests {
             range(path: "/Users/x/App/A.swift", line: 10, col: 7, tier: .greenIndexstore)
         ])
         let merged = RenamePlanner.reconcile(plan, with: [], lspConsulted: true)
-        #expect(merged.warnings.contains("reconciliation_empty"))
+        #expect(merged.warnings.contains(.reconciliationEmpty))
         // When LSP is consulted but returns nothing, don't downgrade —
         // the degraded-backend case is distinct from an actual disagreement.
         #expect(merged.ranges[0].tier == .greenIndexstore)

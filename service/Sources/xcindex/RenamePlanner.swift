@@ -267,8 +267,8 @@ struct RenamePlanner {
         // consumers know the green-indexstore tiers aren't verified.
         guard lspConsulted else {
             var updated = plan.warnings
-            if !updated.contains("reconciliation_unavailable") {
-                updated.append("reconciliation_unavailable")
+            if !updated.contains(.reconciliationUnavailable) {
+                updated.append(.reconciliationUnavailable)
             }
             return RenamePlan(
                 usr: plan.usr,
@@ -353,8 +353,8 @@ struct RenamePlanner {
         let combined = (upgraded + added).sorted(by: RenameRange.locationOrder)
         var warnings = plan.warnings
         if lspLocations.isEmpty {
-            if !warnings.contains("reconciliation_empty") {
-                warnings.append("reconciliation_empty")
+            if !warnings.contains(.reconciliationEmpty) {
+                warnings.append(.reconciliationEmpty)
             }
         }
 
@@ -412,7 +412,7 @@ struct RenamePlan: Codable {
     let ranges: [RenameRange]
     let summary: PlanSummary
     let refusal: Refusal?
-    let warnings: [String]
+    let warnings: [RenameWarning]
 
     static func refused(
         usr: String,
@@ -499,6 +499,26 @@ enum RenameTier: String, Codable {
     case yellowDisagreement = "yellow-disagreement"
     case yellowLspOnly = "yellow-lsp-only"
     case redStale = "red-stale"
+}
+
+/// Typed codes for the `warnings` field on a plan. Keeping the raw
+/// values in sync with docs/tools-reference.md#Warnings is a
+/// compile-time contract now that `RenamePlan.warnings` is
+/// `[RenameWarning]` instead of `[String]`.
+enum RenameWarning: String, Codable, Equatable {
+    case reconciliationUnavailable = "reconciliation_unavailable"
+    case reconciliationEmpty = "reconciliation_empty"
+    case workspaceRootUnresolved = "workspace_root_unresolved"
+    case sourcekitLspNotFound = "sourcekit_lsp_not_found"
+    case sourcekitLspLaunchFailed = "sourcekit_lsp_launch_failed"
+    case sourcekitLspTimeout = "sourcekit_lsp_timeout"
+    case sourcekitLspNotRunning = "sourcekit_lsp_not_running"
+    case sourcekitLspProcessTerminated = "sourcekit_lsp_process_terminated"
+    case sourcekitLspProtocolError = "sourcekit_lsp_protocol_error"
+    case sourcekitLspError = "sourcekit_lsp_error"
+    case sourcekitLspNeedsCompileCommands = "sourcekit_lsp_needs_compile_commands"
+    case compileCommandsMissing = "compile_commands_missing"
+    case lspFileReadFailed = "lsp_file_read_failed"
 }
 
 enum RenameReason: String, Codable {

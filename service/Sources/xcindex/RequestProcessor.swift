@@ -196,14 +196,14 @@ actor RequestProcessor {
         guard let workspaceRoot = deriveWorkspaceRoot(request: request) else {
             return withWarnings(
                 RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
-                appending: ["workspace_root_unresolved"]
+                appending: [.workspaceRootUnresolved]
             )
         }
 
         let diagnostics = WorkspaceDiagnostics(root: workspaceRoot)
-        var projectWarnings: [String] = []
+        var projectWarnings: [RenameWarning] = []
         if diagnostics.isXcodeProject, !diagnostics.hasBuildServerBridge {
-            projectWarnings.append("compile_commands_missing")
+            projectWarnings.append(.compileCommandsMissing)
         }
 
         let client: LSPClient
@@ -242,7 +242,7 @@ actor RequestProcessor {
             // Empty-from-Xcode-project is the classic "no build context"
             // case — point the user at xcode-build-server.
             if lspRefs.isEmpty, diagnostics.isXcodeProject, !diagnostics.hasBuildServerBridge {
-                extras.append("sourcekit_lsp_needs_compile_commands")
+                extras.append(.sourcekitLspNeedsCompileCommands)
             }
             let reconciled = RenamePlanner.reconcile(plan, with: lspRefs, lspConsulted: true)
             return withWarnings(reconciled, appending: extras)
@@ -270,36 +270,36 @@ actor RequestProcessor {
     /// compiler warning — keep the taxonomy honest.
     ///
     /// Internal for unit-test coverage of the taxonomy mapping.
-    static func diagnoseLSPError(_ error: Error, phase: String) -> (code: String, stderr: String) {
+    static func diagnoseLSPError(_ error: Error, phase: String) -> (code: RenameWarning, stderr: String) {
         if let lspError = error as? LSPClientError {
             switch lspError {
             case .binaryNotFound:
-                return ("sourcekit_lsp_not_found", "binary not found: \(lspError.localizedDescription)")
+                return (.sourcekitLspNotFound, "binary not found: \(lspError.localizedDescription)")
             case .binaryNotExecutable(let path):
-                return ("sourcekit_lsp_not_found", "binary not executable at \(path)")
+                return (.sourcekitLspNotFound, "binary not executable at \(path)")
             case .initializeTimeout:
-                return ("sourcekit_lsp_launch_failed", "initialize timed out during \(phase)")
+                return (.sourcekitLspLaunchFailed, "initialize timed out during \(phase)")
             case .referencesTimeout:
-                return ("sourcekit_lsp_timeout", "references query timed out")
+                return (.sourcekitLspTimeout, "references query timed out")
             case .notRunning:
-                return ("sourcekit_lsp_not_running", "client already shut down during \(phase)")
+                return (.sourcekitLspNotRunning, "client already shut down during \(phase)")
             case .processTerminated:
-                return ("sourcekit_lsp_process_terminated", "child process exited during \(phase)")
+                return (.sourcekitLspProcessTerminated, "child process exited during \(phase)")
             case .fileReadFailed(let path, let underlying):
-                return ("lsp_file_read_failed", "file read failed for \(path) during \(phase): \(underlying)")
+                return (.lspFileReadFailed, "file read failed for \(path) during \(phase): \(underlying)")
             case .protocolError(let detail):
-                return ("sourcekit_lsp_protocol_error", "protocol error during \(phase): \(detail)")
+                return (.sourcekitLspProtocolError, "protocol error during \(phase): \(detail)")
             }
         }
         return (
-            "sourcekit_lsp_error",
+            .sourcekitLspError,
             "unexpected error during \(phase) (\(type(of: error))): \(error.localizedDescription)"
         )
     }
 
     /// Return a copy of `plan` with `extras` appended to `warnings`,
     /// preserving order and deduping against existing entries.
-    private func withWarnings(_ plan: RenamePlan, appending extras: [String]) -> RenamePlan {
+    private func withWarnings(_ plan: RenamePlan, appending extras: [RenameWarning]) -> RenamePlan {
         guard !extras.isEmpty else { return plan }
         var merged = plan.warnings
         for warning in extras where !merged.contains(warning) {
