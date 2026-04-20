@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude-xcindex: post-edit hook (PostToolUse: Edit|Write|MultiEdit)
+# xcindex: post-edit hook (PostToolUse: Edit|Write|MultiEdit)
 #
 # When Claude edits a Swift/ObjC source file, append its absolute path to
 # the session state file. The MCP server (xcindex) reads this file on each

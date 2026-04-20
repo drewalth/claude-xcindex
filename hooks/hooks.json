@@ -1,5 +1,5 @@
 {
-  "description": "claude-xcindex hooks: freshness check at session start, stale-index tracking on Swift file edits",
+  "description": "xcindex hooks: freshness check at session start, stale-index tracking on Swift file edits",
   "hooks": {
     "SessionStart": [
       {

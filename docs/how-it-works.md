@@ -1,6 +1,6 @@
 # How it works
 
-This page explains the mental model behind `claude-xcindex`: what the
+This page explains the mental model behind `xcindex`: what the
 index is, how freshness works, and why the tools prefer USRs over
 symbol names.
 
@@ -19,7 +19,7 @@ a string literal. It understands Swift-specific semantics that textual
 tools can't — protocol witnesses, extensions, `@objc` bridging,
 overrides, conformances.
 
-`claude-xcindex` does not build anything and does not maintain its own
+`xcindex` does not build anything and does not maintain its own
 index. It **reads** Xcode's index using Apple's official
 [`indexstore-db`](https://github.com/swiftlang/indexstore-db) library —
 the same library SourceKit-LSP uses.

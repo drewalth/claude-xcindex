@@ -20,7 +20,7 @@ will be released before public details are published.
 
 ## Scope
 
-`claude-xcindex` is a local-only MCP plugin. It:
+`xcindex` is a local-only MCP plugin. It:
 
 - Reads Xcode's on-disk symbol index from your `DerivedData/` directory.
 - Writes a session-state file under `$TMPDIR/xcindex-edited-*.txt`

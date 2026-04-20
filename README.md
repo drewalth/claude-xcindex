@@ -43,7 +43,7 @@ matter.
 ```
 Claude Code
     ↓ (MCP over stdio)
-claude-xcindex plugin
+xcindex plugin
 ├── Skills          — tell Claude WHEN to use the index
 ├── Hooks           — freshness warnings at session start and after edits
 ├── Subagent        — isolated context for large renames
@@ -96,7 +96,7 @@ Exposed under `mcp__xcindex__*`. Signatures and examples in
 ## 📦 Install
 
 > [!NOTE]
-> **Marketplace submission pending.** `claude-xcindex` is awaiting approval
+> **Marketplace submission pending.** `xcindex` is awaiting approval
 > for the official Anthropic plugin marketplace. In the meantime, install
 > it by adding this repo as a local marketplace — same plugin, one extra
 > step.
@@ -105,7 +105,7 @@ From inside Claude Code:
 
 ```
 /plugin marketplace add drewalth/claude-xcindex
-/plugin install claude-xcindex@claude-xcindex-local
+/plugin install xcindex@xcindex-local
 ```
 
 First run downloads the matching `xcindex` binary from the GitHub release
@@ -139,7 +139,7 @@ Then in Claude Code:
 
 ```
 /plugin marketplace add /absolute/path/to/claude-xcindex
-/plugin install claude-xcindex@claude-xcindex-local
+/plugin install xcindex@xcindex-local
 ```
 
 The launcher detects the from-source build at
@@ -179,10 +179,10 @@ project. Pair it with:
 
 Live LSP features (completion, diagnostics, hover) backed by
 SourceKit-LSP. Different layer: `swift-lsp` is an editor-UI integration
-(no MCP tools the agent can call); `claude-xcindex` exposes semantic
+(no MCP tools the agent can call); `xcindex` exposes semantic
 queries to the agent loop. They don't overlap.
 
-| | `swift-lsp` | `claude-xcindex` |
+| | `swift-lsp` | `xcindex` |
 |---|---|---|
 | Backend | SourceKit-LSP server | `indexstore-db` reader |
 | Source of truth | live Swift source | Xcode build-time index |
@@ -203,9 +203,9 @@ queries to the agent loop. They don't overlap.
 ## 🆚 Other Swift symbol tools
 
 If you've already looked at the broader Swift-MCP space, here's where
-`claude-xcindex` sits relative to the closest neighbours:
+`xcindex` sits relative to the closest neighbours:
 
-| | `claude-xcindex` | [`block/xcode-index-mcp`](https://github.com/block/xcode-index-mcp) | [SwiftLens](https://github.com/swiftlens/swiftlens) |
+| | `xcindex` | [`block/xcode-index-mcp`](https://github.com/block/xcode-index-mcp) | [SwiftLens](https://github.com/swiftlens/swiftlens) |
 |---|---|---|---|
 | Backend | `indexstore-db` (direct) | `indexstore-db` (direct) | SourceKit-LSP |
 | Packaging | Claude Code plugin (skills + hooks + subagent) | Raw MCP server | Raw MCP server |
