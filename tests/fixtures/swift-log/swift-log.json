@@ -1,0 +1,26 @@
+{
+  "fixture": "swift-log",
+  "fixture_source": "https://github.com/apple/swift-log",
+  "upstream": {
+    "tag": "1.12.0",
+    "sha": "5073617dac96330a486245e4c0179cb0a6fd2256",
+    "pinned_on": "2026-04-20"
+  },
+  "curation_method": "stub — symbols listed below need hand-curation against the pinned checkout, followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
+  "generated_at": "2026-04-20T00:00:00Z",
+  "caveats": [
+    "swift-log is intentionally small and macro-free — a clean regression target for non-macro Swift. If the planner's basic range collection breaks, this fixture catches it before TCA's louder failure modes do.",
+    "Protocol-default-implementation witnesses are out of scope for v1.1.x; log-handler types conform to LogHandler and their method implementations are witnesses. Ground truth should omit those witness sites and record them under `caveats` if a reviewer adds them.",
+    "Every entry in `symbols` starts with `needs_verification: true`. Flip to false only after a reviewer has inspected the checkout and confirmed the expected_ranges are exhaustive for the symbol."
+  ],
+  "symbols": [
+    {
+      "description": "STUB — Logger is the public entry point of swift-log; renaming it touches every user of the library. This stub resolves its USR against the pinned checkout so the harness reports how many reference sites the planner surfaces, but the expected_ranges list needs hand-curation.",
+      "symbol_query": "Logger",
+      "kind": "struct",
+      "new_name": "Loggerx",
+      "needs_verification": true,
+      "expected_ranges": []
+    }
+  ]
+}
