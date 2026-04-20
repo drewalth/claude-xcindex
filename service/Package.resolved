@@ -1,5 +1,5 @@
 {
-  "originHash" : "26c07cb79258353267c3024cbaa4079c6a7c66b15d29f4cb1d1ab6b141f5f2b6",
+  "originHash" : "08f726d5aa9f8b77b70eb4476b431718c81960d08ee439bc7c8a387b3353165a",
   "pins" : [
     {
       "identity" : "eventsource",
@@ -15,6 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/indexstore-db.git",
       "state" : {
+        "branch" : "main",
         "revision" : "4ee7a49edc48e94361c3477623deeffb25dbed0d"
       }
     },
@@ -88,6 +89,15 @@
       "state" : {
         "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
         "version" : "1.6.4"
+      }
+    },
+    {
+      "identity" : "swift-tools-protocols",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-tools-protocols.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "49678017c7b83a90a27f56b05c39a19bc2d1c608"
       }
     }
   ],
