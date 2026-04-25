@@ -1,5 +1,5 @@
 {
-  "description": "claude-xcindex hooks: freshness check at session start, stale-index tracking on Swift file edits",
+  "description": "claude-xcindex hooks: freshness check at session start, stale-index tracking on Swift file edits, semantic-tool reminder when grepping Swift/ObjC source",
   "hooks": {
     "SessionStart": [
       {
@@ -18,6 +18,17 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/post-edit.sh\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-grep.sh\""
           }
         ]
       }
