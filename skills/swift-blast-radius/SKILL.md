@@ -1,35 +1,41 @@
 ---
 name: swift-blast-radius
-description: Use BEFORE reading multiple files when the user asks "what does this
-  file affect?", "what depends on X?", or "what will break if I change Y?". Also
-  use before editing a shared utility or service to understand the minimal set of
-  files you need to read. Returns direct dependents, transitive callers, and
-  covering test files — replaces reading the whole project.
+description: Compute the dependency blast radius of a Swift or Objective-C file — direct dependents, one hop of transitive callers, and covering tests — from Xcode's pre-built index. Use this when planning a refactor, scoping a structural change, or sizing the impact of editing a shared file, before reading anything.
+when_to_use: |
+  Trigger on phrasing like "what does this file affect", "what depends on
+  AuthService.swift", "what will break if I change this", "what tests cover this
+  code", "blast radius of NetworkClient.swift", "scope this refactor", "how big a
+  change is this", "is it safe to edit X". Reach for this skill BEFORE editing
+  any shared utility, service, manager, or model file, and BEFORE starting any
+  non-trivial refactor — the result tells you the minimal set of files you
+  actually need to read. For broader scoping that includes risks and a
+  recommended execution path, use swift-refactor-plan. For symbol-level (not
+  file-level) impact, use swift-find-references. Skip when the file is an
+  obvious leaf (a specific View or ViewModel with no callers) or the index is
+  stale.
 ---
 
-# When to use
+# What this skill does
 
-- "What uses `AuthService.swift`?" / "What will break if I change this file?"
-- "What tests cover this code?"
-- Before making a structural change to a shared type or utility
-- When the user asks for the blast radius, impact, or dependents of a file
-- Before starting a refactor to scope the work
+Given a file path, returns three sets:
 
-# When NOT to use
+- `directDependents` — files that directly call symbols defined in the target.
+- `affectedFiles` — `directDependents` plus one hop of transitive callers.
+- `coveringTests` — test files within the affected set.
 
-- You want references to a specific *symbol* (use `swift-find-references` instead)
-- The file is a leaf (views, specific ViewModels) with obviously no callers
-- The index is stale — blast radius will be incomplete
+This replaces "read 20 files to understand the codebase before editing." The
+index already knows.
 
 # How to use
 
 1. Call `blast_radius` with the absolute file path.
-2. Read the result:
-   - `directDependents` — files that directly call symbols defined in the target file
-   - `affectedFiles` — direct + one hop of transitive callers
-   - `coveringTests` — test files in the affected set
-3. Read only the files in `directDependents` (and `coveringTests` if you need tests).
-   Skip `affectedFiles` unless you're doing a deep refactor.
+2. Read the result and decide:
+   - Refactor or signature change: read **all** of `directDependents` plus
+     `coveringTests`. Skip `affectedFiles` unless you're doing something deep.
+   - Behavior-preserving internal change: skim `directDependents`, run
+     `coveringTests`.
+3. Treat `affectedFiles` as a *risk surface*, not a reading list — it's where
+   regressions might surface, not where edits happen.
 
 # Token-saving pattern
 
@@ -37,15 +43,29 @@ description: Use BEFORE reading multiple files when the user asks "what does thi
 BAD:  Read 20 files to "understand the codebase" before editing NetworkClient.swift
 GOOD: blast_radius("NetworkClient.swift")
       → directDependents: [APIService.swift, AuthManager.swift]
-      → coveringTests: [NetworkClientTests.swift]
-      Read only those 3 files. Save 17 file reads.
+      → coveringTests:    [NetworkClientTests.swift]
+      Read only those 3. Save 17 file reads.
 ```
 
-# Example workflow
+# Example
 
 User: "I need to refactor `ModelData.swift`. What do I need to read first?"
 
-1. `blast_radius(filePath: "/path/to/ModelData.swift")`
-2. Returns 5 direct dependents + 2 test files
-3. Read those 7 files → understand the full impact surface
-4. Make the refactor with confidence
+1. `blast_radius(filePath: "/abs/path/ModelData.swift")`
+2. Returns 5 direct dependents + 2 covering tests.
+3. Read those 7 files. Refactor with confidence in the impact surface.
+
+# When it won't help
+
+- The unit of analysis is a *symbol*, not a file → use `swift-find-references`.
+- The file is a leaf with obviously no inbound callers (e.g. a screen-specific
+  View) — `blast_radius` will just confirm that, but it's not the cheapest path.
+- The index is stale (the user edited but didn't build) — the MCP server will
+  attach a freshness warning; respect it.
+
+# Related skills
+
+- **swift-refactor-plan** — when the user wants a full written plan with risks
+  and a recommended next step, not just an impact list.
+- **swift-find-references** — for symbol-level scoping.
+- **swift-rename-symbol** — once the user has decided to act.
