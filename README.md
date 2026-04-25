@@ -45,7 +45,7 @@ Claude Code
     ↓ (MCP over stdio)
 claude-xcindex plugin
 ├── Skills          — tell Claude WHEN to use the index
-├── Hooks           — freshness warnings at session start and after edits
+├── Hooks           — freshness warnings + nudge Claude off grep on Swift code
 ├── Subagent        — isolated context for large renames
 ├── Slash commands  — /xcindex-setup, /xcindex-status
 └── Swift binary    — MCP server, queries IndexStoreDB
@@ -80,11 +80,13 @@ Exposed under `mcp__xcindex__*`. Signatures and examples in
 
 ### Skills & hooks
 
+- **`swift-refactor-plan`** — triggers on "plan a rename / what would changing X involve?". Produces a written refactor plan (sites, risks, recommended execution path) without making any edits.
 - **`swift-find-references`** — triggers on "where is X used?". Steers Claude off grep.
 - **`swift-blast-radius`** — triggers on "what does this file affect?". Skips shotgun reads.
-- **`swift-rename-symbol`** — triggers on rename requests. Delegates to a subagent so the main context doesn't balloon.
+- **`swift-rename-symbol`** — triggers on committed rename requests. Delegates to a subagent so the main context doesn't balloon.
 - **`SessionStart` hook** — reports index freshness up front.
-- **`PostToolUse` hook** — tracks Swift/ObjC edits so stale results are annotated. Never triggers a build.
+- **`PostToolUse` hook** (Edit/Write/MultiEdit) — tracks Swift/ObjC edits so stale results are annotated. Never triggers a build.
+- **`PreToolUse` hook** (Grep) — when Claude is about to grep Swift/ObjC source (`*.swift`/`*.m`/`*.mm` glob, `type: swift`, or a Swift file path), injects a one-line reminder that the semantic xcindex tools and skills exist. Non-blocking — the Grep proceeds either way; free-text searches (TODOs, log messages) are unaffected.
 
 ## 🛠 Requirements
 
@@ -239,10 +241,10 @@ claude-xcindex/
 ├── .mcp.json                      # MCP server registration
 ├── bin/run                        # launcher
 ├── service/                       # Swift MCP server
-├── skills/                        # find-refs, blast-radius, rename
+├── skills/                        # refactor-plan, find-refs, blast-radius, rename
 ├── agents/swift-refactor-specialist.md
 ├── commands/                      # /xcindex-setup, /xcindex-status
-├── hooks/                         # session-start.sh, post-edit.sh
+├── hooks/                         # session-start.sh, post-edit.sh, pre-grep.sh
 └── build.sh
 ```
 
