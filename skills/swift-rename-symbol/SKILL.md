@@ -33,7 +33,7 @@ session doesn't read 50 files — it gets a short summary back.
 # What the subagent does
 
 The subagent has `find_symbol`, `find_references`, `find_definition`,
-`find_overrides`, `blast_radius`, `Read`, and `Edit`. It will:
+`find_overrides`, `find_conformances`, `blast_radius`, `Read`, and `Edit`. It will:
 
 1. `find_symbol(symbolName: "OldName")` → resolve to a USR + definition site.
 2. Confirm the USR is the right kind/module. If multiple match, return to the

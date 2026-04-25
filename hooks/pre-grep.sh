@@ -13,6 +13,7 @@
 # Exit 0 always; on failure to inject context the tool still runs.
 
 set -euo pipefail
+# All external commands use || fallbacks so pipefail never fires an early exit.
 
 # Tool input may arrive via the CLAUDE_TOOL_INPUT env var (used by the
 # other hooks in this plugin) or via stdin (newer convention). Try both.
@@ -27,6 +28,7 @@ import sys, json
 try:
     data = json.load(sys.stdin)
 except Exception:
+    print('no')
     sys.exit(0)
 glob = (data.get('glob') or '').lower()
 type_ = (data.get('type') or '').lower()

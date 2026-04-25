@@ -57,12 +57,12 @@ Run only the queries that match the target shape. Skip anything irrelevant.
 
 1. `find_symbol(symbolName: <name>)` → resolve to a USR. If multiple results,
    pick the one matching the user's stated module/kind, or ask.
-2. `find_definition(symbolName: <name>)` → confirm the definition site.
+2. `find_definition(usr: <usr from step 1>)` → confirm the definition site.
 3. `find_references(symbolName: <name>, maxResults: 200)` → every reference.
-4. If the symbol is a method or property: `find_overrides(symbolName: <name>)` —
+4. If the symbol is a method or property: `find_overrides(usr: <usr from step 1>)` —
    subclass overrides break silently if missed.
 5. If the symbol is a protocol or protocol requirement:
-   `find_conformances(symbolName: <name>)` — every conformer must update.
+   `find_conformances(usr: <usr from step 1>)` — every conformer must update.
 
 **File target:**
 
@@ -123,7 +123,8 @@ directly:
 
 <one of:>
 - Use `swift-rename-symbol` — dispatches the rename via the
-  swift-refactor-specialist subagent. Estimated subagent context: ~<N>k tokens.
+  swift-refactor-specialist subagent. Estimated subagent context: ~Xk tokens
+  (roughly: site count × 80 tokens/site + 200 tokens/file read).
 - Manual edits in <list of files> — recommended when sites need
   case-by-case judgment (e.g. some calls need migration shims).
 - Pause and decide on <X> first — recommended when the plan surfaces a design
@@ -149,9 +150,9 @@ that touch?"
 
 **You:**
 
-1. `find_symbol("fetchUser")` → one USR, in `MyApp.UserService`.
-2. `find_references("fetchUser", maxResults: 200)` → 11 sites across 6 files.
-3. `find_overrides("fetchUser")` → 0 (it's a free function on the class).
+1. `find_symbol(symbolName: "fetchUser")` → one USR, in `MyApp.UserService`.
+2. `find_references(symbolName: "fetchUser", maxResults: 200)` → 11 sites across 6 files.
+3. `find_overrides(usr: "s:9MyApp11UserServiceC9fetchUserSiyF")` → 0 (it's a free function on the class).
 4. Review the role of each site (calls vs definition).
 
 ```markdown
