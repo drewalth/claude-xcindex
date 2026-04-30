@@ -8,6 +8,7 @@ tools:
   - mcp__xcindex__find_references
   - mcp__xcindex__find_definition
   - mcp__xcindex__find_overrides
+  - mcp__xcindex__find_conformances
   - mcp__xcindex__blast_radius
   - Read
   - Edit
@@ -28,8 +29,9 @@ touching only the correct symbol sites and nothing else.
    `find_references(symbolName: "OldName", maxResults: 500)`.
    This returns every occurrence with file, line, column, and role.
 
-3. **Check for overrides** (methods/properties only)
-   `find_overrides(usr: "...")` — overriding implementations need renaming too.
+3. **Check for overrides and conformances** (both calls are cheap; run both when in doubt)
+   - `find_overrides(usr: "<USR from step 1>")` — finds subclass overrides (relevant for methods/properties).
+   - `find_conformances(usr: "<USR from step 1>")` — finds protocol conformers (relevant for protocols/requirements).
 
 4. **Edit each site**
    For each occurrence:
