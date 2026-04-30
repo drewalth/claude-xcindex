@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude-xcindex: session-start hook
+# xcindex: session-start hook
 #
 # 1. Truncate the session state file used to track edited Swift/ObjC files
 #    (must match mcp/src/freshness.ts#stateFilePath and hooks/post-edit.sh).

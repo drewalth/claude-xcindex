@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in claude-xcindex isn't working as expected.
+description: Something in xcindex isn't working as expected.
 title: "[bug] "
 labels: ["bug"]
 body:
@@ -37,8 +37,8 @@ body:
   - type: input
     id: xcindex-version
     attributes:
-      label: claude-xcindex version
-      description: Output of `/plugin` (the line for `claude-xcindex`), or the git SHA if installed from source.
+      label: xcindex version
+      description: Output of `/plugin` (the line for `xcindex`), or the git SHA if installed from source.
     validations:
       required: true
 

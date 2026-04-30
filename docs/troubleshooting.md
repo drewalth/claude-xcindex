@@ -42,7 +42,7 @@ index is still authoritative.
 
 ## Tools don't appear in Claude Code
 
-1. Run `/plugin` — `claude-xcindex` should be listed. If it isn't,
+1. Run `/plugin` — `xcindex` should be listed. If it isn't,
    install it: `/plugin install drewalth/claude-xcindex`.
 2. If it's listed but the `mcp__xcindex__*` tools are missing, the
    launcher couldn't resolve the Swift binary. Check:

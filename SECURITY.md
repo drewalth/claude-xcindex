@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest released version of `claude-xcindex` receives fixes. Check
+Only the latest released version of `xcindex` receives fixes. Check
 the [releases page](https://github.com/drewalth/claude-xcindex/releases)
 for the current version.
 
@@ -20,7 +20,7 @@ will be released before public details are published.
 
 ## Scope
 
-`claude-xcindex` is a local-only MCP plugin. It:
+`xcindex` is a local-only MCP plugin. It:
 
 - Reads Xcode's on-disk symbol index from your `DerivedData/` directory.
 - Writes a session-state file under `$TMPDIR/xcindex-edited-*.txt`

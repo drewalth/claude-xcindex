@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot script to create the claude-xcindex issue labels. Requires
+# One-shot script to create the xcindex issue labels. Requires
 # `gh auth login`. Idempotent — existing labels are updated, missing
 # ones are created. Safe to re-run.
 #

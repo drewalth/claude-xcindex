@@ -1,4 +1,4 @@
-# Contributing to claude-xcindex
+# Contributing to xcindex
 
 Thanks for your interest in contributing. This document covers the
 basics for getting your changes merged.

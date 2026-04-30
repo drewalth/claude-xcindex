@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# xcindex-doctor: first-run / troubleshooting diagnostic for claude-xcindex.
+# xcindex-doctor: first-run / troubleshooting diagnostic for xcindex.
 #
 # Checks, in order:
 #   1. Xcode is installed and selected.
