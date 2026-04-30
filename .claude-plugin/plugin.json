@@ -4,6 +4,7 @@
   "description": "Query Xcode's pre-built symbol index from Claude Code. Surgical, semantic Swift/ObjC symbol lookups — find references, definitions, overrides, conformances, and blast radius without reading full files.",
   "author": {
     "name": "Andrew Althage",
+    "email": "16584198+drewalth@users.noreply.github.com",
     "url": "https://github.com/drewalth"
   },
   "homepage": "https://github.com/drewalth/claude-xcindex",

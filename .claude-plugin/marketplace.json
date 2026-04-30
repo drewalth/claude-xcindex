@@ -1,8 +1,9 @@
 {
   "name": "xcindex-local",
+  "description": "Semantic Swift/ObjC symbol lookups for Claude Code, powered by Xcode's on-disk index.",
   "owner": {
     "name": "Andrew Althage",
-    "url": "https://github.com/drewalth"
+    "email": "16584198+drewalth@users.noreply.github.com"
   },
   "plugins": [
     {
