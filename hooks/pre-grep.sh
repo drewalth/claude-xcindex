@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude-xcindex: pre-grep hook (PreToolUse: Grep)
+# xcindex: pre-grep hook (PreToolUse: Grep)
 #
 # When Claude is about to grep Swift/ObjC source, surface a one-line
 # reminder that xcindex_* tools are semantic — no false positives from

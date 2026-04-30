@@ -1,6 +1,6 @@
 ![Hero](https://raw.githubusercontent.com/drewalth/claude-xcindex/main/assets/hero.png)
 
-# claude-xcindex
+# xcindex
 
 #### Semantic Swift/ObjC symbol lookups for Claude Code — powered by Xcode's on-disk SourceKit index.
 

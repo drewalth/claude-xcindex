@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest released version of `claude-xcindex` receives fixes. Check
+Only the latest released version of `xcindex` receives fixes. Check
 the [releases page](https://github.com/drewalth/claude-xcindex/releases)
 for the current version.
 

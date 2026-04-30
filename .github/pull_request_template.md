@@ -1,5 +1,5 @@
 <!--
-Thanks for contributing to claude-xcindex!
+Thanks for contributing to xcindex!
 
 - Keep PRs focused. One logical change per PR is easier to review and revert.
 - Follow Conventional Commits for the PR title (e.g. `feat:`, `fix:`,
