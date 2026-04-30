@@ -1,5 +1,5 @@
 ---
-name: xcindex-setup
+name: setup
 description: Bootstrap xcindex in the current project — verifies the Swift binary, locates the Xcode project, optionally builds it so the symbol index is populated, then smoke-tests the MCP tools.
 allowed-tools:
   - Bash

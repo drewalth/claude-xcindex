@@ -39,4 +39,5 @@ fi
 echo "==> Built: service/${BINARY}"
 echo ""
 echo "To install this plugin locally:"
-echo "  /plugin install ${PLUGIN_DIR}"
+echo "  /plugin marketplace add ${PLUGIN_DIR}"
+echo "  /plugin install xcindex@xcindex-local"

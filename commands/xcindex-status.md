@@ -1,5 +1,5 @@
 ---
-name: xcindex-status
+name: status
 description: Check Xcode index freshness for the current project.
 allowed-tools:
   - mcp__xcindex__status
