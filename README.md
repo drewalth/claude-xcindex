@@ -97,17 +97,9 @@ Exposed under `mcp__xcindex__*`. Signatures and examples in
 
 ## 📦 Install
 
-> [!NOTE]
-> **Marketplace submission pending.** `xcindex` is awaiting approval
-> for the official Anthropic plugin marketplace. In the meantime, install
-> it by adding this repo as a local marketplace — same plugin, one extra
-> step.
-
-From inside Claude Code:
-
 ```
-/plugin marketplace add drewalth/claude-xcindex
-/plugin install xcindex@xcindex-local
+claude plugin marketplace add anthropics/claude-plugins-community
+claude plugin install claude-xcindex@claude-community
 ```
 
 First run downloads the matching `xcindex` binary from the GitHub release
