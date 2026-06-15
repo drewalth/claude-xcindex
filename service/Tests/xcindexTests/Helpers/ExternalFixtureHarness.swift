@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import xcindex
 
+// Single end-to-end runner (build + resolve + score + emit); relax structural rules.
+// swiftlint:disable function_body_length
+
 // MARK: - ExternalFixtureHarness
 //
 // Shared runner for external-fixture coverage tests (TCA, swift-log,
@@ -373,3 +376,5 @@ enum ExternalFixtureHarness {
         return env["TOOLCHAIN_VERSION"] ?? env["SWIFT_VERSION"] ?? "unknown"
     }
 }
+
+// swiftlint:enable function_body_length

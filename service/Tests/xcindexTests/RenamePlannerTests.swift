@@ -3,6 +3,9 @@ import IndexStoreDB
 import Testing
 @testable import xcindex
 
+// Long, exhaustive suite with loop-index counters; relax for this test file.
+// swiftlint:disable type_body_length identifier_name
+
 /// Unit + integration tests for the indexstore-only first pass of
 /// `RenamePlanner`. These lock in:
 ///   • the happy-path tier assignment (green-indexstore by default)
@@ -328,8 +331,8 @@ struct RenamePlannerTests {
         // Tier + summary keys land in snake_case for consumers.
         #expect(jsonString.contains("\"green_indexstore\""))
         #expect(jsonString.contains("\"green-indexstore\"") ||
-                    jsonString.contains("green-indexstore"),
-                "tier values should render as the snake/kebab-case raw form")
+            jsonString.contains("green-indexstore"),
+            "tier values should render as the snake/kebab-case raw form")
 
         // Round-trip preserves shape.
         let decoded = try JSONDecoder().decode(RenamePlan.self, from: data)
@@ -571,3 +574,5 @@ private enum FixtureHolder {
         return built
     }
 }
+
+// swiftlint:enable type_body_length identifier_name

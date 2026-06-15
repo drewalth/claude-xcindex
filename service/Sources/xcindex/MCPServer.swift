@@ -91,7 +91,7 @@ private enum ToolDefinitions {
     static let findReferences = Tool(
         name: "find_references",
         description:
-            "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
+        "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
             "Returns exact file+line+column+role for each reference — no false positives from " +
             "comments, strings, or same-named symbols in other modules. " +
             "Call find_symbol first if you need to disambiguate overloads. " +
@@ -117,7 +117,7 @@ private enum ToolDefinitions {
     static let findSymbol = Tool(
         name: "find_symbol",
         description:
-            "Look up a symbol by name and return its kind, language, USR, and definition location. " +
+        "Look up a symbol by name and return its kind, language, USR, and definition location. " +
             "Use this BEFORE find_references or find_definition to disambiguate " +
             "overloaded names (e.g. multiple types named 'Delegate' in different modules). " +
             "Returns one result per distinct symbol that exactly matches the name.",
@@ -137,7 +137,7 @@ private enum ToolDefinitions {
     static let findDefinition = Tool(
         name: "find_definition",
         description:
-            "Return the canonical definition site (file + line) for a symbol identified by USR. " +
+        "Return the canonical definition site (file + line) for a symbol identified by USR. " +
             "Use after find_symbol to jump to the declaration. " +
             "More precise than text search because it uses the semantic USR, not the symbol name.",
         inputSchema: Schema.object(
@@ -153,7 +153,7 @@ private enum ToolDefinitions {
     static let findOverrides = Tool(
         name: "find_overrides",
         description:
-            "Find all classes or structs that override a given method or property. " +
+        "Find all classes or structs that override a given method or property. " +
             "Essential before changing a method signature in a base class. " +
             "Pass the USR from find_symbol for the base method.",
         inputSchema: Schema.object(
@@ -169,7 +169,7 @@ private enum ToolDefinitions {
     static let findConformances = Tool(
         name: "find_conformances",
         description:
-            "Find all types that conform to a Swift protocol. " +
+        "Find all types that conform to a Swift protocol. " +
             "Pass the protocol's USR from find_symbol. " +
             "More reliable than searching for ': ProtocolName' in source — handles type aliases and " +
             "retroactive conformances declared in other files.",
@@ -186,7 +186,7 @@ private enum ToolDefinitions {
     static let blastRadius = Tool(
         name: "blast_radius",
         description:
-            "Given a source file path, return the minimal set of files you need to read before " +
+        "Given a source file path, return the minimal set of files you need to read before " +
             "editing it: direct dependents (files that call its symbols), one hop of transitive " +
             "callers, and the covering test files. " +
             "Call this BEFORE reading files when the user asks 'what does this file affect?' or " +
@@ -208,7 +208,7 @@ private enum ToolDefinitions {
     static let status = Tool(
         name: "status",
         description:
-            "Check the freshness of the Xcode index for a project. " +
+        "Check the freshness of the Xcode index for a project. " +
             "Returns the index store path, last-build timestamp, and whether any source files " +
             "edited this session are newer than the index. " +
             "Call this first if you suspect the index is stale, or at session start when working " +
@@ -228,7 +228,7 @@ private enum ToolDefinitions {
     static let planRename = Tool(
         name: "plan_rename",
         description:
-            "Build a semantic rename plan for a Swift/ObjC symbol. Returns every " +
+        "Build a semantic rename plan for a Swift/ObjC symbol. Returns every " +
             "reference site (including overrides) grouped by confidence tier: " +
             "green-indexstore for direct refs, yellow-disagreement for " +
             "operator/subscript/label cases whose range end cannot be verified " +
@@ -361,10 +361,10 @@ enum Dispatcher {
         }
 
         var lines = ["Found \(symbols.count) symbol(s) named '\(symbolName)':\n"]
-        for s in symbols {
-            lines.append("  USR:  \(s.usr)")
-            lines.append("  Kind: \(s.kind)  Language: \(s.language)")
-            if let path = s.definitionPath, let line = s.definitionLine {
+        for symbol in symbols {
+            lines.append("  USR:  \(symbol.usr)")
+            lines.append("  Kind: \(symbol.kind)  Language: \(symbol.language)")
+            if let path = symbol.definitionPath, let line = symbol.definitionLine {
                 lines.append("  Defined at: \(path):\(line)")
             }
             lines.append("")
@@ -460,7 +460,11 @@ enum Dispatcher {
         }
         return .init(content: [text(lines.joined(separator: "\n"))])
     }
+}
 
+// MARK: - Dispatch (file-level + status tools)
+
+extension Dispatcher {
     // MARK: blast_radius
 
     private static func blastRadius(_ args: [String: Value], _ processor: RequestProcessor) async -> CallTool.Result {
@@ -483,36 +487,44 @@ enum Dispatcher {
             return .init(content: [text("No blast radius data returned.")])
         }
 
-        var lines: [String] = []
         let fileName = (filePath as NSString).lastPathComponent
-
-        if br.affectedFiles.isEmpty {
-            lines.append("No dependents found for '\(fileName)' — safe to edit in isolation.")
-        } else {
-            lines.append("Blast radius for '\(fileName)': \(br.affectedFiles.count) affected file(s)\n")
-            lines.append("Direct dependents:")
-            for f in br.directDependents { lines.append("  \(f)") }
-            if !br.coveringTests.isEmpty {
-                lines.append("\nCovering tests:")
-                for f in br.coveringTests { lines.append("  \(f)") }
-            }
-            let directSet = Set(br.directDependents)
-            let testsSet = Set(br.coveringTests)
-            let others = br.affectedFiles.filter { !directSet.contains($0) && !testsSet.contains($0) }
-            if !others.isEmpty {
-                lines.append("\nTransitive dependents (\(others.count)):")
-                for f in others.prefix(20) { lines.append("  \(f)") }
-                if others.count > 20 {
-                    lines.append("  … and \(others.count - 20) more")
-                }
-            }
-        }
+        var lines = blastRadiusLines(br, fileName: fileName)
 
         if let note = Freshness.staleNote(involvedPaths: [filePath]) {
             lines.append("\n⚠️  \(note)")
         }
 
         return .init(content: [text(lines.joined(separator: "\n"))])
+    }
+
+    /// Format the blast-radius result into output lines (without the
+    /// freshness note, which the caller appends).
+    private static func blastRadiusLines(_ br: BlastRadiusResult, fileName: String) -> [String] {
+        guard !br.affectedFiles.isEmpty else {
+            return ["No dependents found for '\(fileName)' — safe to edit in isolation."]
+        }
+
+        var lines = [
+            "Blast radius for '\(fileName)': \(br.affectedFiles.count) affected file(s)\n",
+            "Direct dependents:"
+        ]
+        for file in br.directDependents { lines.append("  \(file)") }
+        if !br.coveringTests.isEmpty {
+            lines.append("\nCovering tests:")
+            for file in br.coveringTests { lines.append("  \(file)") }
+        }
+
+        let directSet = Set(br.directDependents)
+        let testsSet = Set(br.coveringTests)
+        let others = br.affectedFiles.filter { !directSet.contains($0) && !testsSet.contains($0) }
+        if !others.isEmpty {
+            lines.append("\nTransitive dependents (\(others.count)):")
+            for file in others.prefix(20) { lines.append("  \(file)") }
+            if others.count > 20 {
+                lines.append("  … and \(others.count - 20) more")
+            }
+        }
+        return lines
     }
 
     // MARK: status
@@ -542,7 +554,7 @@ enum Dispatcher {
 
         if !editedFiles.isEmpty {
             lines.append("\nFiles edited this session: \(editedFiles.count)")
-            for f in editedFiles { lines.append("  \(f)") }
+            for file in editedFiles { lines.append("  \(file)") }
             lines.append("\n⚠️  These files were edited after the index was built. Consider rebuilding in Xcode for accurate results.")
         } else {
             lines.append("\nNo source files edited this session — index should be current.")
@@ -605,8 +617,8 @@ enum Dispatcher {
 
     // MARK: helpers
 
-    private static func text(_ s: String) -> Tool.Content {
-        .text(text: s, annotations: nil, _meta: nil)
+    private static func text(_ string: String) -> Tool.Content {
+        .text(text: string, annotations: nil, _meta: nil)
     }
 
     private static func error(_ message: String) -> CallTool.Result {

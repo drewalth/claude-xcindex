@@ -1,5 +1,8 @@
 import Foundation
 
+// Embedded Python script string makes this builder long; relax structural rules.
+// swiftlint:disable function_body_length
+
 /// Writes a scripted fake sourcekit-lsp to a temp path so `LSPClient`
 /// tests can drive timeout, protocol-error, and termination branches
 /// without depending on a real Swift toolchain. The script is a
@@ -118,3 +121,5 @@ final class FakeLSPServer {
         """
     }
 }
+
+// swiftlint:enable function_body_length

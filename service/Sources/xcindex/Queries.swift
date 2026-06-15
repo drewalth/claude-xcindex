@@ -373,10 +373,8 @@ func loadIndexStoreLibrary() throws -> IndexStoreLibrary {
         "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib"
     ]
 
-    for path in candidates.compactMap({ $0 }) {
-        if FileManager.default.fileExists(atPath: path) {
-            return try IndexStoreLibrary(dylibPath: path)
-        }
+    for path in candidates.compactMap({ $0 }) where FileManager.default.fileExists(atPath: path) {
+        return try IndexStoreLibrary(dylibPath: path)
     }
     throw IndexQuerierError.noIndexStoreLibrary
 }

@@ -51,20 +51,10 @@ struct RenamePlanner {
             filesEditedThisSession: editedFiles.count
         )
 
-        if isDisabled {
-            return RenamePlan.refused(
-                usr: usr, oldName: "", newName: newName,
-                generatedAt: generatedAt, indexFreshness: freshness,
-                refusal: RefusalReason.disabledByEnv.refusal()
-            )
-        }
-
-        if let reason = IdentifierValidator.validate(newName) {
-            return RenamePlan.refused(
-                usr: usr, oldName: "", newName: newName,
-                generatedAt: generatedAt, indexFreshness: freshness,
-                refusal: RefusalReason.invalidIdentifier(details: reason).refusal()
-            )
+        if let refusal = preconditionRefusal(
+            usr: usr, newName: newName, generatedAt: generatedAt, freshness: freshness
+        ) {
+            return refusal
         }
 
         // Resolve the definition to derive oldName and detect SDK /
@@ -73,13 +63,66 @@ struct RenamePlanner {
         // as "nothing to rename" instead of "USR not found."
         guard let def = querier.findDefinition(usr: usr) else {
             return RenamePlan.refused(
-                usr: usr, oldName: "", newName: newName,
+                usr: usr, newName: newName,
                 generatedAt: generatedAt, indexFreshness: freshness,
                 refusal: RefusalReason.usrNotFound(usr: usr).refusal()
             )
         }
         let oldName = def.symbolName
 
+        if let refusal = definitionRefusal(
+            def: def, usr: usr, newName: newName, generatedAt: generatedAt, freshness: freshness
+        ) {
+            return refusal
+        }
+
+        let ranges = collectRanges(baseUSR: usr, oldName: oldName)
+        return RenamePlan(
+            usr: usr,
+            oldName: oldName,
+            newName: newName,
+            generatedAt: generatedAt,
+            indexFreshness: freshness,
+            ranges: ranges,
+            summary: PlanSummary.counting(ranges),
+            refusal: nil,
+            warnings: []
+        )
+    }
+}
+
+// MARK: - Preconditions + range construction
+
+extension RenamePlanner {
+    /// Refuse before definition resolution: env kill-switch and invalid
+    /// identifier. Returns the refusal plan, or nil to proceed.
+    private func preconditionRefusal(
+        usr: String, newName: String, generatedAt: String, freshness: IndexFreshness
+    ) -> RenamePlan? {
+        if isDisabled {
+            return RenamePlan.refused(
+                usr: usr, newName: newName,
+                generatedAt: generatedAt, indexFreshness: freshness,
+                refusal: RefusalReason.disabledByEnv.refusal()
+            )
+        }
+        if let reason = IdentifierValidator.validate(newName) {
+            return RenamePlan.refused(
+                usr: usr, newName: newName,
+                generatedAt: generatedAt, indexFreshness: freshness,
+                refusal: RefusalReason.invalidIdentifier(details: reason).refusal()
+            )
+        }
+        return nil
+    }
+
+    /// Refuse after definition resolution: SDK-owned or synthesized
+    /// symbols. Returns the refusal plan, or nil to proceed.
+    private func definitionRefusal(
+        def: OccurrenceResult, usr: String, newName: String,
+        generatedAt: String, freshness: IndexFreshness
+    ) -> RenamePlan? {
+        let oldName = def.symbolName
         if isSDKPath(def.path) {
             return RenamePlan.refused(
                 usr: usr, oldName: oldName, newName: newName,
@@ -94,14 +137,17 @@ struct RenamePlanner {
                 refusal: RefusalReason.synthesizedSymbolNotRenameable.refusal()
             )
         }
+        return nil
+    }
 
-        // IndexStoreDB assigns separate USRs to overriding
-        // declarations, so renaming the base means visiting each
-        // override's occurrences independently. Protocol-default
-        // witnesses are not followed here and land via LSP reconcile.
-        var usrsToRename: [String] = [usr]
-        let overrides = querier.findOverrides(usr: usr)
-        usrsToRename.append(contentsOf: overrides.map(\.usr))
+    /// Collect, dedupe, and order rename ranges for the base USR plus
+    /// every override USR. IndexStoreDB assigns separate USRs to
+    /// overriding declarations, so renaming the base means visiting each
+    /// override's occurrences independently. Protocol-default witnesses
+    /// are not followed here and land via LSP reconcile.
+    private func collectRanges(baseUSR: String, oldName: String) -> [RenameRange] {
+        var usrsToRename: [String] = [baseUSR]
+        usrsToRename.append(contentsOf: querier.findOverrides(usr: baseUSR).map(\.usr))
 
         // Same role set as findRefs so the two tools stay consistent.
         var occurrences: [SymbolOccurrence] = []
@@ -123,22 +169,8 @@ struct RenamePlanner {
         }
 
         ranges.sort(by: RenameRange.locationOrder)
-        let summary = PlanSummary.counting(ranges)
-
-        return RenamePlan(
-            usr: usr,
-            oldName: oldName,
-            newName: newName,
-            generatedAt: generatedAt,
-            indexFreshness: freshness,
-            ranges: ranges,
-            summary: summary,
-            refusal: nil,
-            warnings: []
-        )
+        return ranges
     }
-
-    // MARK: - Tier + range construction
 
     private func buildRange(occ: SymbolOccurrence, oldName: String) -> RenameRange {
         let path = occ.location.path
@@ -249,110 +281,88 @@ struct RenamePlanner {
     ) -> RenamePlan {
         // Pass-through when LSP wasn't available: add a warning so
         // consumers know the green-indexstore tiers aren't verified.
-        guard lspConsulted else {
-            var updated = plan.warnings
-            if !updated.contains(.reconciliationUnavailable) {
-                updated.append(.reconciliationUnavailable)
-            }
-            return RenamePlan(
-                usr: plan.usr,
-                oldName: plan.oldName,
-                newName: plan.newName,
-                generatedAt: plan.generatedAt,
-                indexFreshness: plan.indexFreshness,
-                ranges: plan.ranges,
-                summary: plan.summary,
-                refusal: plan.refusal,
-                warnings: updated
-            )
-        }
+        guard lspConsulted else { return unreconciledPlan(plan) }
 
-        // LSP: 0-indexed line + utf16 character. IndexStoreDB: 1-indexed
-        // line + utf8 column. The +1 alignment is exact only for ASCII
-        // lines; with non-ASCII content the utf16 and utf8 columns
-        // diverge, the key misses, and the range stays at its original
-        // tier rather than upgrading to green-verified — conservative by
-        // design. Output column-encoding contract: see `RenameRange`.
-        func realpath(_ path: String) -> String {
-            (path as NSString).resolvingSymlinksInPath
-        }
+        let lspKeys = Set(lspLocations.map(lspKey))
+        let indexstoreKeys = Set(plan.ranges.map(rangeKey))
+        let combined = (upgradedRanges(plan.ranges, lspKeys: lspKeys)
+            + lspOnlyRanges(lspLocations, indexstoreKeys: indexstoreKeys))
+            .sorted(by: RenameRange.locationOrder)
 
-        var lspKeys = Set<String>()
-        for loc in lspLocations {
-            let normalized = realpath(loc.path)
-            let key = "\(normalized):\(loc.line + 1):\(loc.character + 1)"
-            lspKeys.insert(key)
-        }
-
-        // Upgrade tiers for ranges that also appear in LSP output.
-        var upgraded: [RenameRange] = []
-        var indexstoreKeys = Set<String>()
-        for range in plan.ranges {
-            let normalized = realpath(range.path)
-            let key = "\(normalized):\(range.line):\(range.column)"
-            indexstoreKeys.insert(key)
-
-            if range.tier == .redStale {
-                upgraded.append(range)
-                continue
-            }
-
-            if lspKeys.contains(key) {
-                upgraded.append(range.withTier(.greenVerified))
-            } else {
-                if lspKeys.isEmpty {
-                    // Empty LSP response: don't downgrade individual
-                    // ranges; surfaced as degraded via the top-level
-                    // warning path instead.
-                    upgraded.append(range)
-                } else {
-                    // `.lspDidNotEcho`, not `.sourcekitLspOnly`: this
-                    // range is from indexstore and LSP failed to echo
-                    // it. The inverse reason would read backwards to
-                    // JSON consumers.
-                    upgraded.append(range.withTier(.yellowDisagreement).withReasonsMerged([.lspDidNotEcho]))
-                }
-            }
-        }
-
-        // Add LSP-only ranges (occurrences LSP found that indexstore
-        // didn't). These commonly surface macro-generated call sites.
-        var added: [RenameRange] = []
-        for loc in lspLocations {
-            let normalized = realpath(loc.path)
-            let key = "\(normalized):\(loc.line + 1):\(loc.character + 1)"
-            if indexstoreKeys.contains(key) { continue }
-            added.append(RenameRange(
-                path: loc.path,
-                line: loc.line + 1,
-                column: loc.character + 1,
-                endColumn: loc.character + 1 + (loc.endCharacter - loc.character),
-                tier: .yellowLspOnly,
-                reasons: [.sourcekitLspOnly, .macroAdjacent],
-                module: nil,
-                source: .sourcekitLsp
-            ))
-        }
-
-        let combined = (upgraded + added).sorted(by: RenameRange.locationOrder)
         var warnings = plan.warnings
-        if lspLocations.isEmpty {
-            if !warnings.contains(.reconciliationEmpty) {
-                warnings.append(.reconciliationEmpty)
-            }
+        if lspLocations.isEmpty, !warnings.contains(.reconciliationEmpty) {
+            warnings.append(.reconciliationEmpty)
         }
 
-        return RenamePlan(
-            usr: plan.usr,
-            oldName: plan.oldName,
-            newName: plan.newName,
-            generatedAt: plan.generatedAt,
-            indexFreshness: plan.indexFreshness,
-            ranges: combined,
-            summary: PlanSummary.counting(combined),
-            refusal: plan.refusal,
-            warnings: warnings
-        )
+        return plan.replacingRanges(combined, warnings: warnings)
+    }
+
+    /// Pass-through copy with a `.reconciliationUnavailable` warning,
+    /// used when sourcekit-lsp was never consulted.
+    private static func unreconciledPlan(_ plan: RenamePlan) -> RenamePlan {
+        var updated = plan.warnings
+        if !updated.contains(.reconciliationUnavailable) {
+            updated.append(.reconciliationUnavailable)
+        }
+        return plan.replacingWarnings(updated)
+    }
+
+    /// URIs are realpath-normalized on both sides so `/private/var/...`
+    /// matches `/var/...`.
+    private static func realpath(_ path: String) -> String {
+        (path as NSString).resolvingSymlinksInPath
+    }
+
+    // LSP: 0-indexed line + utf16 character. IndexStoreDB: 1-indexed line
+    // + utf8 column. The +1 alignment is exact only for ASCII lines; with
+    // non-ASCII content the utf16 and utf8 columns diverge, the key
+    // misses, and the range stays at its original tier rather than
+    // upgrading to green-verified — conservative by design. Output
+    // column-encoding contract: see `RenameRange`.
+    private static func lspKey(_ loc: LSPRefLocation) -> String {
+        "\(realpath(loc.path)):\(loc.line + 1):\(loc.character + 1)"
+    }
+
+    private static func rangeKey(_ range: RenameRange) -> String {
+        "\(realpath(range.path)):\(range.line):\(range.column)"
+    }
+
+    /// Upgrade tiers for ranges that also appear in LSP output.
+    private static func upgradedRanges(
+        _ ranges: [RenameRange], lspKeys: Set<String>
+    ) -> [RenameRange] {
+        ranges.map { range in
+            if range.tier == .redStale { return range }
+            if lspKeys.contains(rangeKey(range)) { return range.withTier(.greenVerified) }
+            // Empty LSP response: don't downgrade individual ranges;
+            // surfaced as degraded via the top-level warning path instead.
+            if lspKeys.isEmpty { return range }
+            // `.lspDidNotEcho`, not `.sourcekitLspOnly`: this range is from
+            // indexstore and LSP failed to echo it. The inverse reason
+            // would read backwards to JSON consumers.
+            return range.withTier(.yellowDisagreement).withReasonsMerged([.lspDidNotEcho])
+        }
+    }
+
+    /// LSP-only ranges (occurrences LSP found that indexstore didn't).
+    /// These commonly surface macro-generated call sites.
+    private static func lspOnlyRanges(
+        _ lspLocations: [LSPRefLocation], indexstoreKeys: Set<String>
+    ) -> [RenameRange] {
+        lspLocations
+            .filter { !indexstoreKeys.contains(lspKey($0)) }
+            .map { loc in
+                RenameRange(
+                    path: loc.path,
+                    line: loc.line + 1,
+                    column: loc.character + 1,
+                    endColumn: loc.character + 1 + (loc.endCharacter - loc.character),
+                    tier: .yellowLspOnly,
+                    reasons: [.sourcekitLspOnly, .macroAdjacent],
+                    module: nil,
+                    source: .sourcekitLsp
+                )
+            }
     }
 
     private func isSDKPath(_ path: String) -> Bool {
@@ -429,7 +439,7 @@ struct RenamePlan: Codable {
 
     static func refused(
         usr: String,
-        oldName: String,
+        oldName: String = "",
         newName: String,
         generatedAt: String,
         indexFreshness: IndexFreshness,
@@ -445,6 +455,39 @@ struct RenamePlan: Codable {
             summary: .zero,
             refusal: refusal,
             warnings: []
+        )
+    }
+
+    /// Return a copy with `ranges` (and recomputed `summary`) replaced —
+    /// used by reconciliation to emit the merged range set.
+    func replacingRanges(_ newRanges: [RenameRange], warnings newWarnings: [RenameWarning]) -> RenamePlan {
+        RenamePlan(
+            usr: usr,
+            oldName: oldName,
+            newName: newName,
+            generatedAt: generatedAt,
+            indexFreshness: indexFreshness,
+            ranges: newRanges,
+            summary: PlanSummary.counting(newRanges),
+            refusal: refusal,
+            warnings: newWarnings,
+            truncated: truncated
+        )
+    }
+
+    /// Return a copy with only `warnings` replaced.
+    func replacingWarnings(_ newWarnings: [RenameWarning]) -> RenamePlan {
+        RenamePlan(
+            usr: usr,
+            oldName: oldName,
+            newName: newName,
+            generatedAt: generatedAt,
+            indexFreshness: indexFreshness,
+            ranges: ranges,
+            summary: summary,
+            refusal: refusal,
+            warnings: newWarnings,
+            truncated: truncated
         )
     }
 

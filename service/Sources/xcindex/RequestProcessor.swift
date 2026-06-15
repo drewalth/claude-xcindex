@@ -179,7 +179,11 @@ actor RequestProcessor {
             return Response(error: error.localizedDescription)
         }
     }
+}
 
+// MARK: - LSP reconciliation
+
+extension RequestProcessor {
     /// Resolves the workspace, lazily spawns sourcekit-lsp if needed,
     /// and reconciles the indexstore-only plan with the server's
     /// `textDocument/references` response. Every failure mode adds a
@@ -224,39 +228,9 @@ actor RequestProcessor {
         }
 
         do {
-            // IndexStoreDB is 1-indexed UTF-8; LSP is 0-indexed UTF-16.
-            // The -1 alignment only holds exactly for ASCII identifiers;
-            // non-ASCII names are already flagged yellow in the planner.
-            let position = Position(line: def.line - 1, utf16index: def.column - 1)
-            let fileURL = URL(fileURLWithPath: def.path)
-            let locations: [Location]
-            do {
-                locations = try await client.references(fileURL: fileURL, position: position)
-            } catch {
-                // A dead child or shut-down client must be dropped
-                // from the cache so the next planRename re-launches
-                // instead of getting the same corpse back. An exited
-                // subprocess surfaces as `.protocolError("connection
-                // closed")`, not `.processTerminated`, so probe the
-                // client's liveness rather than pattern-matching the
-                // error taxonomy — a transient timeout on a healthy
-                // client leaves `isAlive` true and the cache intact.
-                if await !client.isAlive {
-                    evictLSPClient(for: workspaceRoot)
-                }
-                throw error
-            }
-
-            let lspRefs = locations.compactMap { loc -> LSPRefLocation? in
-                guard let path = loc.uri.fileURL?.path else { return nil }
-                return LSPRefLocation(
-                    path: path,
-                    line: loc.range.lowerBound.line,
-                    character: loc.range.lowerBound.utf16index,
-                    endLine: loc.range.upperBound.line,
-                    endCharacter: loc.range.upperBound.utf16index
-                )
-            }
+            let lspRefs = try await queryReferences(
+                client: client, workspaceRoot: workspaceRoot, def: def
+            )
             var extras = projectWarnings
             // Empty-from-Xcode-project is the classic "no build context"
             // case — point the user at xcode-build-server.
@@ -273,6 +247,47 @@ actor RequestProcessor {
             return withWarnings(
                 RenamePlanner.reconcile(plan, with: [], lspConsulted: false),
                 appending: projectWarnings + [code]
+            )
+        }
+    }
+
+    /// Run `textDocument/references` for the symbol at `def` and map the
+    /// LSP locations into `LSPRefLocation`. Evicts a dead client from the
+    /// cache before rethrowing so the next planRename re-launches.
+    private func queryReferences(
+        client: LSPClient, workspaceRoot: URL, def: OccurrenceResult
+    ) async throws -> [LSPRefLocation] {
+        // IndexStoreDB is 1-indexed UTF-8; LSP is 0-indexed UTF-16. The
+        // -1 alignment only holds exactly for ASCII identifiers;
+        // non-ASCII names are already flagged yellow in the planner.
+        let position = Position(line: def.line - 1, utf16index: def.column - 1)
+        let fileURL = URL(fileURLWithPath: def.path)
+        let locations: [Location]
+        do {
+            locations = try await client.references(fileURL: fileURL, position: position)
+        } catch {
+            // A dead child or shut-down client must be dropped from the
+            // cache so the next planRename re-launches instead of getting
+            // the same corpse back. An exited subprocess surfaces as
+            // `.protocolError("connection closed")`, not
+            // `.processTerminated`, so probe the client's liveness rather
+            // than pattern-matching the error taxonomy — a transient
+            // timeout on a healthy client leaves `isAlive` true and the
+            // cache intact.
+            if await !client.isAlive {
+                evictLSPClient(for: workspaceRoot)
+            }
+            throw error
+        }
+
+        return locations.compactMap { loc -> LSPRefLocation? in
+            guard let path = loc.uri.fileURL?.path else { return nil }
+            return LSPRefLocation(
+                path: path,
+                line: loc.range.lowerBound.line,
+                character: loc.range.lowerBound.utf16index,
+                endLine: loc.range.upperBound.line,
+                endCharacter: loc.range.upperBound.utf16index
             )
         }
     }

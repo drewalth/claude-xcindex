@@ -133,25 +133,7 @@ actor LSPClient {
             }
         )
 
-        // Minimal client capabilities — we only use references, so omit
-        // completion, hover, diagnostics, etc.
-        let initRequest = InitializeRequest(
-            processId: Int(ProcessInfo.processInfo.processIdentifier),
-            rootPath: nil,
-            rootURI: DocumentURI(workspaceRoot),
-            initializationOptions: nil,
-            capabilities: ClientCapabilities(
-                workspace: nil,
-                textDocument: TextDocumentClientCapabilities(
-                    references: .init()
-                ),
-                window: nil,
-                general: nil,
-                experimental: nil
-            ),
-            trace: .off,
-            workspaceFolders: [WorkspaceFolder(uri: DocumentURI(workspaceRoot))]
-        )
+        let initRequest = makeInitializeRequest(workspaceRoot: workspaceRoot)
 
         // Track PID for atexit fallback before we await anything that
         // could fail — if the parent dies between now and the handshake,
@@ -182,6 +164,28 @@ actor LSPClient {
             connection: connection,
             process: process,
             capabilities: initResult.capabilities
+        )
+    }
+
+    /// Minimal `initialize` request — we only use references, so omit
+    /// completion, hover, diagnostics, and other client capabilities.
+    private static func makeInitializeRequest(workspaceRoot: URL) -> InitializeRequest {
+        InitializeRequest(
+            processId: Int(ProcessInfo.processInfo.processIdentifier),
+            rootPath: nil,
+            rootURI: DocumentURI(workspaceRoot),
+            initializationOptions: nil,
+            capabilities: ClientCapabilities(
+                workspace: nil,
+                textDocument: TextDocumentClientCapabilities(
+                    references: .init()
+                ),
+                window: nil,
+                general: nil,
+                experimental: nil
+            ),
+            trace: .off,
+            workspaceFolders: [WorkspaceFolder(uri: DocumentURI(workspaceRoot))]
         )
     }
 
@@ -418,6 +422,7 @@ final class NoopMessageHandler: MessageHandler, Sendable {
         if Request.Response.self == VoidResponse.self {
             // The type-equality check above makes this cast safe; Swift
             // generics can't propagate that equality to the cast site.
+            // swiftlint:disable:next force_cast
             reply(.success(VoidResponse() as! Request.Response))
         } else {
             reply(.failure(.methodNotFound(Request.method)))

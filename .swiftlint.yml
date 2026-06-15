@@ -22,7 +22,5 @@ excluded:
 disabled_rules:
   - trailing_whitespace
 
-documentation: warning
-strict_concurrency: warning
-sendable: warning
-implicitly_unwrapped_optional: error
+opt_in_rules:
+  - implicitly_unwrapped_optional

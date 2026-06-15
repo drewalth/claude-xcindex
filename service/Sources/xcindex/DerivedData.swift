@@ -60,10 +60,10 @@ enum DerivedDataLocator {
             throw LocatorError.noDerivedData(projectName, derivedDataBase.path)
         }
 
-        let sorted = try candidates.sorted { a, b in
-            let dateA = try a.resourceValues(forKeys: [.contentModificationDateKey])
+        let sorted = try candidates.sorted { lhs, rhs in
+            let dateA = try lhs.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate ?? .distantPast
-            let dateB = try b.resourceValues(forKeys: [.contentModificationDateKey])
+            let dateB = try rhs.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate ?? .distantPast
             return dateA > dateB
         }
@@ -99,8 +99,8 @@ enum DerivedDataLocator {
             switch self {
             case .noProjectPath:
                 return "Either 'projectPath' or 'indexStorePath' must be provided."
-            case .invalidProjectPath(let p):
-                return "Could not derive project name from path: \(p)"
+            case .invalidProjectPath(let path):
+                return "Could not derive project name from path: \(path)"
             case .noDerivedData(let name, let base):
                 return "No DerivedData folder found for '\(name)' under \(base). " +
                     "Build the project in Xcode first."

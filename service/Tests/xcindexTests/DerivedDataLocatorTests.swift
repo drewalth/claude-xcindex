@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import xcindex
 
+// Fixtures use a coordinate tuple for readability; relax for this test file.
+// swiftlint:disable large_tuple
+
 /// Covers the three resolution branches of `DerivedDataLocator`:
 ///   1. Explicit `indexStorePath` wins and short-circuits everything else.
 ///   2. Scanning picks the most recently modified `<ProjectName>-*` entry.
@@ -195,3 +198,5 @@ private func makeDerivedDataBase(
     }
     return base
 }
+
+// swiftlint:enable large_tuple

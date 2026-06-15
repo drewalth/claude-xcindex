@@ -31,7 +31,7 @@ lint: ## Check formatting with SwiftFormat (no changes)
 	swiftlint . --config .swiftlint.yml && swiftformat --lint .
 
 format: ## Auto-format the codebase with SwiftFormat
-	swiftformat . && swiftlint . --config .swiftlint.yml --fix --format
+	swiftlint . --config .swiftlint.yml --fix && swiftformat .
 
 test-hooks: ## Run the bash hook regression tests
 	bash tests/hooks/test-session-start.sh
