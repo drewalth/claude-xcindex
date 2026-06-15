@@ -328,8 +328,8 @@ struct RenamePlannerTests {
         // Tier + summary keys land in snake_case for consumers.
         #expect(jsonString.contains("\"green_indexstore\""))
         #expect(jsonString.contains("\"green-indexstore\"") ||
-            jsonString.contains("green-indexstore"),
-            "tier values should render as the snake/kebab-case raw form")
+                    jsonString.contains("green-indexstore"),
+                "tier values should render as the snake/kebab-case raw form")
 
         // Round-trip preserves shape.
         let decoded = try JSONDecoder().decode(RenamePlan.self, from: data)
@@ -353,7 +353,7 @@ struct RenamePlannerTests {
             range(.redStale),
             range(.yellowDisagreement),
             range(.yellowLspOnly),
-            range(.greenVerified),
+            range(.greenVerified)
         ]
         let summary = PlanSummary.counting(mixed)
         #expect(summary.greenIndexstore == 2)

@@ -445,7 +445,7 @@ private let builtinNotifications: [NotificationType.Type] = [
     // only signal when sourcekit-lsp silently returns zero locations.
     // NoopMessageHandler forwards both to stderr.
     LogMessageNotification.self,
-    ShowMessageNotification.self,
+    ShowMessageNotification.self
 ]
 
 // MARK: - Errors

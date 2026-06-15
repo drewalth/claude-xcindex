@@ -85,7 +85,7 @@ enum FixtureBuilder {
             "build",
             "--package-path", packagePath.path,
             "--scratch-path", scratch.path,
-            "-c", "debug",
+            "-c", "debug"
         ]
 
         // Drain stdout/stderr concurrently. Without this, big builds

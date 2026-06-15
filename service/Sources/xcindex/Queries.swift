@@ -288,7 +288,7 @@ final class IndexQuerier {
     /// Return freshness info about the index store.
     func status(storePath: String) -> StatusResult {
         let fm = FileManager.default
-        var indexMtime: String? = nil
+        var indexMtime: String?
 
         if let attrs = try? fm.attributesOfItem(atPath: storePath),
            let mtime = attrs[.modificationDate] as? Date {
@@ -370,7 +370,7 @@ func loadIndexStoreLibrary() throws -> IndexStoreLibrary {
         xcrunContentsPath().map { $0 + "/SharedFrameworks/IndexStore.framework/Versions/A/IndexStore" },
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib",
         "/Applications/Xcode.app/Contents/SharedFrameworks/IndexStore.framework/Versions/A/IndexStore",
-        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib"
     ]
 
     for path in candidates.compactMap({ $0 }) {

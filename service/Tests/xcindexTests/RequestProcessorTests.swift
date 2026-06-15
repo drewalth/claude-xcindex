@@ -140,7 +140,7 @@ struct DiagnoseLSPErrorTests {
             (.notRunning, .sourcekitLspNotRunning),
             (.processTerminated, .sourcekitLspProcessTerminated),
             (.fileReadFailed(path: "/x", underlying: "boom"), .lspFileReadFailed),
-            (.protocolError("boom"), .sourcekitLspProtocolError),
+            (.protocolError("boom"), .sourcekitLspProtocolError)
         ]
         for (error, expectedCode) in cases {
             let result = RequestProcessor.diagnoseLSPError(error, phase: "test")

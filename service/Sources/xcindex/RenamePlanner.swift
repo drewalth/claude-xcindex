@@ -367,7 +367,7 @@ struct RenamePlanner {
         let prefixes = [
             "/Applications/Xcode.app/",
             "/Applications/Xcode-beta.app/",
-            "/Library/Developer/CommandLineTools/",
+            "/Library/Developer/CommandLineTools/"
         ]
         let infixes = [
             "/XcodeDefault.xctoolchain/",
@@ -377,7 +377,7 @@ struct RenamePlanner {
             // these under ~/Library/Developer/Toolchains; swiftly
             // manages its own toolchain tree under ~/.swiftly.
             "/Library/Developer/Toolchains/",
-            "/.swiftly/toolchains/",
+            "/.swiftly/toolchains/"
         ]
         if prefixes.contains(where: path.hasPrefix) { return true }
         if infixes.contains(where: path.contains) { return true }
@@ -693,7 +693,7 @@ enum IdentifierValidator {
         "else", "fallthrough", "for", "guard", "if", "in", "repeat",
         "return", "switch", "throw", "throws", "try", "while",
         "Any", "as", "await", "false", "is", "nil", "self", "Self",
-        "super", "true",
+        "super", "true"
     ]
 
     /// Returns nil if `name` is a valid Swift identifier for rename use,

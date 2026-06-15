@@ -66,7 +66,7 @@ struct DerivedDataLocatorTests {
         let dd = try makeDerivedDataBase(base: base, projects: [
             ("MyApp-oldhash", daysAgo: 5, withIndexStore: true),
             ("MyApp-newerhash", daysAgo: 1, withIndexStore: true),
-            ("OtherApp-unrelated", daysAgo: 0, withIndexStore: true),
+            ("OtherApp-unrelated", daysAgo: 0, withIndexStore: true)
         ])
 
         let resolved = try DerivedDataLocator.indexStorePath(

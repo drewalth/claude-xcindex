@@ -32,7 +32,7 @@ private enum Schema {
     static func object(properties: [String: Value], required: [String] = []) -> Value {
         var obj: [String: Value] = [
             "type": .string("object"),
-            "properties": .object(properties),
+            "properties": .object(properties)
         ]
         if !required.isEmpty {
             obj["required"] = .array(required.map { .string($0) })
@@ -43,14 +43,14 @@ private enum Schema {
     static func string(_ description: String) -> Value {
         .object([
             "type": .string("string"),
-            "description": .string(description),
+            "description": .string(description)
         ])
     }
 
     static func integer(_ description: String, min: Int? = nil, max: Int? = nil, default: Int? = nil) -> Value {
         var obj: [String: Value] = [
             "type": .string("integer"),
-            "description": .string(description),
+            "description": .string(description)
         ]
         if let min { obj["minimum"] = .int(min) }
         if let max { obj["maximum"] = .int(max) }
@@ -69,7 +69,7 @@ private enum Schema {
             "indexStorePath": string(
                 "Absolute path to the IndexStore DataStore directory. " +
                     "Overrides projectPath. Use status to find this path."
-            ),
+            )
         ]
     }
 }
@@ -85,13 +85,13 @@ private enum ToolDefinitions {
         findConformances,
         blastRadius,
         status,
-        planRename,
+        planRename
     ]
 
     static let findReferences = Tool(
         name: "find_references",
         description:
-        "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
+            "Find every occurrence of a Swift/ObjC symbol in Xcode's pre-built semantic index. " +
             "Returns exact file+line+column+role for each reference — no false positives from " +
             "comments, strings, or same-named symbols in other modules. " +
             "Call find_symbol first if you need to disambiguate overloads. " +
@@ -108,7 +108,7 @@ private enum ToolDefinitions {
                     "Cap on the number of occurrences returned (default 100, max 500). " +
                         "For very common symbols, increase only if you need the full picture.",
                     min: 1, max: 500, default: 100
-                ),
+                )
             ],
             required: ["symbolName"]
         )
@@ -117,7 +117,7 @@ private enum ToolDefinitions {
     static let findSymbol = Tool(
         name: "find_symbol",
         description:
-        "Look up a symbol by name and return its kind, language, USR, and definition location. " +
+            "Look up a symbol by name and return its kind, language, USR, and definition location. " +
             "Use this BEFORE find_references or find_definition to disambiguate " +
             "overloaded names (e.g. multiple types named 'Delegate' in different modules). " +
             "Returns one result per distinct symbol that exactly matches the name.",
@@ -128,7 +128,7 @@ private enum ToolDefinitions {
                         "E.g. 'URLSession', 'fetchUser', 'AuthDelegate'."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["symbolName"]
         )
@@ -137,14 +137,14 @@ private enum ToolDefinitions {
     static let findDefinition = Tool(
         name: "find_definition",
         description:
-        "Return the canonical definition site (file + line) for a symbol identified by USR. " +
+            "Return the canonical definition site (file + line) for a symbol identified by USR. " +
             "Use after find_symbol to jump to the declaration. " +
             "More precise than text search because it uses the semantic USR, not the symbol name.",
         inputSchema: Schema.object(
             properties: [
                 "usr": Schema.string(usrDescription),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["usr"]
         )
@@ -153,14 +153,14 @@ private enum ToolDefinitions {
     static let findOverrides = Tool(
         name: "find_overrides",
         description:
-        "Find all classes or structs that override a given method or property. " +
+            "Find all classes or structs that override a given method or property. " +
             "Essential before changing a method signature in a base class. " +
             "Pass the USR from find_symbol for the base method.",
         inputSchema: Schema.object(
             properties: [
                 "usr": Schema.string(usrDescription),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["usr"]
         )
@@ -169,7 +169,7 @@ private enum ToolDefinitions {
     static let findConformances = Tool(
         name: "find_conformances",
         description:
-        "Find all types that conform to a Swift protocol. " +
+            "Find all types that conform to a Swift protocol. " +
             "Pass the protocol's USR from find_symbol. " +
             "More reliable than searching for ': ProtocolName' in source — handles type aliases and " +
             "retroactive conformances declared in other files.",
@@ -177,7 +177,7 @@ private enum ToolDefinitions {
             properties: [
                 "usr": Schema.string(usrDescription),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["usr"]
         )
@@ -186,7 +186,7 @@ private enum ToolDefinitions {
     static let blastRadius = Tool(
         name: "blast_radius",
         description:
-        "Given a source file path, return the minimal set of files you need to read before " +
+            "Given a source file path, return the minimal set of files you need to read before " +
             "editing it: direct dependents (files that call its symbols), one hop of transitive " +
             "callers, and the covering test files. " +
             "Call this BEFORE reading files when the user asks 'what does this file affect?' or " +
@@ -199,7 +199,7 @@ private enum ToolDefinitions {
                         "E.g. '/Users/me/MyApp/Sources/AuthService.swift'."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["filePath"]
         )
@@ -208,7 +208,7 @@ private enum ToolDefinitions {
     static let status = Tool(
         name: "status",
         description:
-        "Check the freshness of the Xcode index for a project. " +
+            "Check the freshness of the Xcode index for a project. " +
             "Returns the index store path, last-build timestamp, and whether any source files " +
             "edited this session are newer than the index. " +
             "Call this first if you suspect the index is stale, or at session start when working " +
@@ -216,7 +216,7 @@ private enum ToolDefinitions {
         inputSchema: Schema.object(
             properties: [
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ]
         )
     )
@@ -228,7 +228,7 @@ private enum ToolDefinitions {
     static let planRename = Tool(
         name: "plan_rename",
         description:
-        "Build a semantic rename plan for a Swift/ObjC symbol. Returns every " +
+            "Build a semantic rename plan for a Swift/ObjC symbol. Returns every " +
             "reference site (including overrides) grouped by confidence tier: " +
             "green-indexstore for direct refs, yellow-disagreement for " +
             "operator/subscript/label cases whose range end cannot be verified " +
@@ -252,7 +252,7 @@ private enum ToolDefinitions {
                         "field is true and `summary` still reflects the full counts; " +
                         "re-invoke with a larger cap if you need the rest.",
                     min: 1, max: 5000, default: 500
-                ),
+                )
             ],
             required: ["usr", "newName"]
         )
@@ -537,7 +537,7 @@ enum Dispatcher {
         let editedFiles = Freshness.getEditedFiles().sorted()
         var lines: [String] = [
             "Index store: \(status.indexStorePath)",
-            "Last updated: \(status.indexMtime ?? "unknown")",
+            "Last updated: \(status.indexMtime ?? "unknown")"
         ]
 
         if !editedFiles.isEmpty {
