@@ -35,3 +35,5 @@ format: ## Auto-format the codebase with SwiftFormat
 
 test-hooks: ## Run the bash hook regression tests
 	bash tests/hooks/test-session-start.sh
+	bash tests/hooks/test-post-edit.sh
+	bash tests/hooks/test-pre-grep.sh
