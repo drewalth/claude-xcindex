@@ -8,7 +8,8 @@ import IndexStoreDB
 // caller after this returns). Per-occurrence classification:
 //   • session-edited file       → red-stale (wins over every other tier)
 //   • operator / non-identifier  → yellow-disagreement
-//   • override / extension / ref → green-indexstore + reason
+//   • override / extension / ref → green-indexstore + reason (the override
+//     case carries .override or .conformanceWitness depending on the relation)
 
 /// The narrow read-only slice of `IndexQuerier` that `RenamePlanner`
 /// exercises. Extracted so tests can substitute a hand-crafted fake

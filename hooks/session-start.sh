@@ -14,8 +14,12 @@ set -euo pipefail
 
 # Backstop the "Exit 0 always" contract: even if a future edit introduces a
 # `set -e` landmine, this hook must never return non-zero (a missing index is
-# informative, not fatal).
-trap 'exit 0' EXIT
+# informative, not fatal). But don't vanish silently — on an abnormal abort
+# (missing core util like shasum, an unwritable $TMPDIR, a future set -e trap)
+# the freshness note never prints, and a silent success looks identical to "all
+# clear." Emit one diagnostic line so the user knows the freshness signal is
+# unreliable rather than absent-by-success, then still exit 0.
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then echo "[xcindex] session-start hook exited unexpectedly (code $rc); skipping freshness note — xcindex_* results may be stale."; fi; exit 0' EXIT
 
 CWD="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 

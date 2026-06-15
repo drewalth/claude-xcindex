@@ -381,8 +381,9 @@ func loadIndexStoreLibrary() throws -> IndexStoreLibrary {
     throw IndexQuerierError.noIndexStoreLibrary
 }
 
-/// Locate `libIndexStore.dylib` via the active toolchain: find `clang`
-/// with `xcrun`, then derive the sibling `lib/` path.
+/// Locate `libIndexStore.dylib` via the active toolchain: guard on an SDK
+/// being present (`xcrun --show-sdk-path`), then find `clang` with `xcrun`
+/// and derive the sibling `usr/lib/` path.
 private func xcrunDerivedToolchainPath() -> String? {
     return runCommand("/usr/bin/xcrun", args: ["-f", "--show-sdk-path"])
         .flatMap { _ in

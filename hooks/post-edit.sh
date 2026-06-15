@@ -15,8 +15,9 @@
 set -euo pipefail
 
 # Backstop the "Exit 0 always" contract: a failure here must never block the
-# tool that triggered this hook.
-trap 'exit 0' EXIT
+# tool that triggered this hook. Surface an abnormal abort instead of vanishing
+# silently — otherwise a broken freshness signal looks like success.
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then echo "[xcindex] post-edit hook exited unexpectedly (code $rc); this edit may not be recorded for stale-tracking."; fi; exit 0' EXIT
 
 TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
 [[ -z "$TOOL_INPUT" ]] && exit 0
@@ -50,12 +51,19 @@ TMP="${TMP%/}"
 HASH=$(printf '%s' "$CWD" | shasum -a 1 | cut -c1-12)
 STATE_FILE="${TMP}/xcindex-edited-${HASH}.txt"
 
-# Append unless already recorded this session.
+BASENAME=$(basename "$FILE_PATH")
+
+# Append unless already recorded this session. A failed write (unwritable
+# $TMPDIR, full disk, read-only state file) would otherwise be masked by the
+# trap, silently dropping this file from stale-tracking — so detect it and warn
+# rather than let Claude later report a just-edited file's symbols as fresh.
 if [[ ! -f "$STATE_FILE" ]] || ! grep -qxF "$FILE_PATH" "$STATE_FILE" 2>/dev/null; then
-    echo "$FILE_PATH" >> "$STATE_FILE"
+    if ! { echo "$FILE_PATH" >> "$STATE_FILE"; } 2>/dev/null; then
+        echo "[xcindex] could not record edit to '${BASENAME}' (state file unwritable); stale-tracking may miss this file."
+        exit 0
+    fi
 fi
 
-BASENAME=$(basename "$FILE_PATH")
 echo "[xcindex] '${BASENAME}' was edited — xcindex results for its symbols may be stale until the project is rebuilt in Xcode."
 
 exit 0
