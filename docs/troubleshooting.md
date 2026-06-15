@@ -85,7 +85,7 @@ If you're on an older version, `/plugin update` and retry.
 ```sh
 git clone https://github.com/drewalth/claude-xcindex.git
 cd claude-xcindex
-./build.sh                       # ~30s on an M-series Mac
+make build                       # ~30s on an M-series Mac
 ./bin/xcindex-doctor             # confirm environment is ready
 # Then in Claude Code:
 /plugin install /absolute/path/to/claude-xcindex

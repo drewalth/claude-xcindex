@@ -16,9 +16,13 @@ basics for getting your changes merged.
 ```sh
 git clone https://github.com/drewalth/claude-xcindex.git
 cd claude-xcindex
-./build.sh --debug
-cd service && swift test
+make build-debug
+make test
 ```
+
+`make help` lists all developer targets (`build`, `test`, `test_ci`,
+`lint`, `format`). They wrap the dev scripts under `scripts/` and are the
+same targets CI runs.
 
 First-time setup sanity check:
 
@@ -141,9 +145,9 @@ Optional but usually expected:
 
 Before submitting:
 
-1. **Build passes**: `./build.sh`
-2. **Tests pass**: `cd service && swift test`
-3. **Format passes**: `swiftformat --lint .` (or `swiftformat .` to auto-fix)
+1. **Build passes**: `make build`
+2. **Tests pass**: `make test`
+3. **Format passes**: `make lint` (or `make format` to auto-fix)
 4. **CHANGELOG updated** if the change is user-visible
 5. **Manual test in Claude Code** for anything that affects MCP tool
    behavior

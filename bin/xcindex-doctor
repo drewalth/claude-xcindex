@@ -177,7 +177,7 @@ else
     if [[ -x "$source_build" ]]; then
         info "Source build at $source_build — bin/run will symlink it on next launch."
     else
-        fail "No xcindex binary yet." "Run ./build.sh, or let bin/run download one on first launch."
+        fail "No xcindex binary yet." "Run make build, or let bin/run download one on first launch."
     fi
 fi
 

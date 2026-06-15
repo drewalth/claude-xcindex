@@ -1,0 +1,26 @@
+type_name:
+  allowed_symbols: "_"
+identifier_name:
+  min_length: 2
+line_length:
+  warning: 220
+  error: 250
+file_length:
+  warning: 1000
+  error: 1500
+
+included:
+  - service
+
+excluded:
+  - .build
+  - .git
+  - .github
+
+disabled_rules:
+  - trailing_whitespace
+
+documentation: warning
+strict_concurrency: warning
+sendable: warning
+implicitly_unwrapped_optional: error
