@@ -26,6 +26,9 @@ jobs:
       - name: SwiftFormat (check)
         run: swiftformat --lint .
 
+      - name: Hook regression tests
+        run: bash tests/hooks/test-session-start.sh
+
   build:
     name: build & test
     runs-on: macos-26

@@ -2,7 +2,8 @@
 # xcindex: session-start hook
 #
 # 1. Truncate the session state file used to track edited Swift/ObjC files
-#    (must match mcp/src/freshness.ts#stateFilePath and hooks/post-edit.sh).
+#    (must match service/Sources/xcindex/Freshness.swift#stateFilePath and
+#    hooks/post-edit.sh).
 # 2. If a .xcodeproj / .xcworkspace lives in the current working directory,
 #    check its index freshness and emit a short note so Claude knows whether
 #    to trust xcindex_* results.
@@ -10,6 +11,11 @@
 # Exit 0 always — a missing index is informative, not fatal.
 
 set -euo pipefail
+
+# Backstop the "Exit 0 always" contract: even if a future edit introduces a
+# `set -e` landmine, this hook must never return non-zero (a missing index is
+# informative, not fatal).
+trap 'exit 0' EXIT
 
 CWD="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
@@ -27,7 +33,9 @@ find_project() {
     # Look in CWD and one level up, prefer .xcworkspace over .xcodeproj
     for dir in "$CWD" "$(dirname "$CWD")"; do
         local ws
-        ws=$(find "$dir" -maxdepth 2 -name "*.xcworkspace" ! -path "*/Pods/*" ! -path "*/.git/*" 2>/dev/null | head -1)
+        # Exclude the auto-generated workspace nested inside a *.xcodeproj
+        # bundle, otherwise PROJECT_NAME resolves to "project" on bare projects.
+        ws=$(find "$dir" -maxdepth 2 -name "*.xcworkspace" ! -path "*/Pods/*" ! -path "*/.git/*" ! -path "*.xcodeproj/*" 2>/dev/null | head -1)
         if [[ -n "$ws" ]]; then echo "$ws"; return 0; fi
         local proj
         proj=$(find "$dir" -maxdepth 2 -name "*.xcodeproj" ! -path "*/.git/*" 2>/dev/null | head -1)
@@ -58,7 +66,8 @@ fi
 DATA_STORE=$(
     ls -dt "${DERIVED_DATA_BASE}/${PROJECT_NAME}-"* 2>/dev/null \
     | head -1
-)
+) || true   # no match → ls exits non-zero; without this, set -e/pipefail
+            # aborts before the "no index" guard below can print + exit 0
 
 if [[ -z "$DATA_STORE" || ! -d "$DATA_STORE/Index.noindex/DataStore" ]]; then
     echo "[xcindex] No Xcode index found for ${PROJECT_NAME}." \

@@ -7,12 +7,16 @@
 # stale since the index was last built."
 #
 # State file location is derived from CLAUDE_PROJECT_DIR (or pwd) and must
-# match the path computed by mcp/src/freshness.ts#stateFilePath.
+# match the path computed by service/Sources/xcindex/Freshness.swift#stateFilePath.
 #
 # Exit 0 always — this is informational only; a failure here must not block
 # the tool.
 
 set -euo pipefail
+
+# Backstop the "Exit 0 always" contract: a failure here must never block the
+# tool that triggered this hook.
+trap 'exit 0' EXIT
 
 TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
 [[ -z "$TOOL_INPUT" ]] && exit 0
@@ -40,7 +44,7 @@ if [[ "$FILE_PATH" != /* ]]; then
     FILE_PATH="$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && pwd)/$(basename "$FILE_PATH")"
 fi
 
-# Derive state file path — must match freshness.ts#stateFilePath
+# Derive state file path — must match Freshness.swift#stateFilePath
 CWD="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 TMP="${TMPDIR:-/tmp}"
 # Strip trailing slash from TMPDIR for a clean join
