@@ -3,21 +3,12 @@ import IndexStoreDB
 
 // MARK: - RenamePlanner
 //
-//   ┌────────────────────────────────────────────────────────────┐
-//   │  plan(usr:newName:)                                         │
-//   │                                                             │
-//   │   1. Kill switch (XCINDEX_DISABLE_PLAN_RENAME)              │
-//   │   2. Validate newName (keyword, identifier rules)           │
-//   │   3. Resolve definition → detect SDK / synthesized          │
-//   │   4. Query indexstore for references via primitive          │
-//   │   5. Per occurrence: assign tier + reasons                  │
-//   │        • session-edited file     → red-stale                │
-//   │        • operator / non-identifier → yellow-disagreement    │
-//   │        • override / extension    → green-indexstore + reason│
-//   │        • else                    → green-indexstore         │
-//   │   6. LSP reconcile green-indexstore candidates              │
-//   │   7. Emit plan + summary + optional refusal/warnings        │
-//   └────────────────────────────────────────────────────────────┘
+// plan(usr:newName:) produces an indexstore-only plan; tier reconciliation
+// against sourcekit-lsp is a separate step (`reconcile`, called by the
+// caller after this returns). Per-occurrence classification:
+//   • session-edited file       → red-stale (wins over every other tier)
+//   • operator / non-identifier  → yellow-disagreement
+//   • override / extension / ref → green-indexstore + reason
 
 /// The narrow read-only slice of `IndexQuerier` that `RenamePlanner`
 /// exercises. Extracted so tests can substitute a hand-crafted fake
@@ -59,7 +50,6 @@ struct RenamePlanner {
             filesEditedThisSession: editedFiles.count
         )
 
-        // 1. Env kill switch
         if isDisabled {
             return RenamePlan.refused(
                 usr: usr, oldName: "", newName: newName,
@@ -68,7 +58,6 @@ struct RenamePlanner {
             )
         }
 
-        // 2. Identifier validation
         if let reason = IdentifierValidator.validate(newName) {
             return RenamePlan.refused(
                 usr: usr, oldName: "", newName: newName,
@@ -77,12 +66,10 @@ struct RenamePlanner {
             )
         }
 
-        // 3. Resolve the definition. Used to derive oldName and detect
-        //    SDK / synthesized cases. Missing definition = refusal:
-        //    without a definition we can't classify ranges or stream
-        //    an audit trail, so emitting an empty plan would invite
-        //    the caller to treat "no ranges" as "nothing to rename"
-        //    rather than "we couldn't find this USR at all."
+        // Resolve the definition to derive oldName and detect SDK /
+        // synthesized cases. Missing definition refuses rather than
+        // emitting an empty plan, so the caller can't read "no ranges"
+        // as "nothing to rename" instead of "USR not found."
         guard let def = querier.findDefinition(usr: usr) else {
             return RenamePlan.refused(
                 usr: usr, oldName: "", newName: newName,
@@ -92,7 +79,6 @@ struct RenamePlanner {
         }
         let oldName = def.symbolName
 
-        // 4. SDK / synthesized detection.
         if isSDKPath(def.path) {
             return RenamePlan.refused(
                 usr: usr, oldName: oldName, newName: newName,
@@ -116,8 +102,7 @@ struct RenamePlanner {
         let overrides = querier.findOverrides(usr: usr)
         usrsToRename.append(contentsOf: overrides.map(\.usr))
 
-        // 6. Fetch occurrences via the shared primitive. Same role
-        //    set as findRefs so behavior is consistent between tools.
+        // Same role set as findRefs so the two tools stay consistent.
         var occurrences: [SymbolOccurrence] = []
         for targetUSR in usrsToRename {
             occurrences.append(contentsOf: querier.occurrences(
@@ -126,7 +111,7 @@ struct RenamePlanner {
             ))
         }
 
-        // 7. Dedupe by (path, line, column) — matches findRefs semantics.
+        // Dedupe by (path, line, column) — matches findRefs semantics.
         var seen = Set<String>()
         var ranges: [RenameRange] = []
         for occ in occurrences {
@@ -159,8 +144,8 @@ struct RenamePlanner {
         let line = occ.location.line
         let column = occ.location.utf8Column
 
-        // IndexStoreDB names methods as full selectors ("fetchUser(id:)"),
-        // but the source identifier is just the base name. Strip the
+        // IndexStoreDB names methods as full selectors ("fetchUser(id:)");
+        // the source identifier is just the base name. Strip the
         // argument-label suffix for range-end computation.
         let baseName = Self.baseName(of: occ.symbol.name.isEmpty ? oldName : occ.symbol.name)
 
@@ -282,14 +267,11 @@ struct RenamePlanner {
         }
 
         // LSP: 0-indexed line + utf16 character. IndexStoreDB: 1-indexed
-        // line + utf8 column. The +1 alignment is exact for pure-ASCII
-        // lines. When a line contains non-ASCII content (the identifier
-        // itself or any preceding characters), the LSP utf16 index and
-        // indexstore utf8 column diverge and this set-membership key
-        // won't match — the range stays at its original tier instead of
-        // being upgraded to green-verified, which is the conservative
-        // behavior we want. The column-encoding contract on the output
-        // is documented on `RenameRange`.
+        // line + utf8 column. The +1 alignment is exact only for ASCII
+        // lines; with non-ASCII content the utf16 and utf8 columns
+        // diverge, the key misses, and the range stays at its original
+        // tier rather than upgrading to green-verified — conservative by
+        // design. Output column-encoding contract: see `RenameRange`.
         func realpath(_ path: String) -> String {
             (path as NSString).resolvingSymlinksInPath
         }
@@ -317,17 +299,16 @@ struct RenamePlanner {
             if lspKeys.contains(key) {
                 upgraded.append(range.withTier(.greenVerified))
             } else {
-                // LSP did not echo this range. If LSP returned nothing
-                // at all, don't downgrade — we'll treat the empty LSP
-                // response as "degraded" via the top-level warning path.
                 if lspKeys.isEmpty {
+                    // Empty LSP response: don't downgrade individual
+                    // ranges; surfaced as degraded via the top-level
+                    // warning path instead.
                     upgraded.append(range)
                 } else {
-                    // `.lspDidNotEcho` is the inverse of
-                    // `.sourcekitLspOnly`: this range came from
-                    // indexstore and LSP failed to echo it. Using
-                    // `.sourcekitLspOnly` here would read backwards
-                    // and mislead JSON consumers.
+                    // `.lspDidNotEcho`, not `.sourcekitLspOnly`: this
+                    // range is from indexstore and LSP failed to echo
+                    // it. The inverse reason would read backwards to
+                    // JSON consumers.
                     upgraded.append(range.withTier(.yellowDisagreement).withReasonsMerged([.lspDidNotEcho]))
                 }
             }

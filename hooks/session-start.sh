@@ -30,7 +30,7 @@ STATE_FILE="${TMP}/xcindex-edited-${HASH}.txt"
 # ── Find the nearest .xcodeproj or .xcworkspace ──────────────────────────────
 
 find_project() {
-    # Look in CWD and one level up, prefer .xcworkspace over .xcodeproj
+    # CWD and one level up, preferring .xcworkspace over .xcodeproj.
     for dir in "$CWD" "$(dirname "$CWD")"; do
         local ws
         # Exclude the auto-generated workspace nested inside a *.xcodeproj
@@ -47,7 +47,7 @@ find_project() {
 PROJECT=$(find_project 2>/dev/null || true)
 
 if [[ -z "$PROJECT" ]]; then
-    # No Xcode project found — nothing to check, state file already reset
+    # No Xcode project — nothing to check; state file already reset.
     exit 0
 fi
 
@@ -57,7 +57,7 @@ PROJECT_NAME=$(basename "$PROJECT" | sed 's/\.[^.]*$//')
 
 DERIVED_DATA_BASE="$HOME/Library/Developer/Xcode/DerivedData"
 
-# Check for custom DerivedData path in Xcode preferences
+# Honor a custom DerivedData location set in Xcode preferences.
 CUSTOM_PATH=$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation 2>/dev/null || true)
 if [[ -n "$CUSTOM_PATH" ]]; then
     DERIVED_DATA_BASE="$CUSTOM_PATH"
@@ -101,7 +101,6 @@ if (( STALE_COUNT == 0 )); then
     echo "[xcindex] Index is current for ${PROJECT_NAME} (last built ${INDEX_DATE})." \
          "xcindex_* tools are available for semantic symbol queries."
 else
-    # Join the first few file names with commas, add ellipsis if truncated
     NAMES_JOINED=$(printf "%s, " "${STALE_FILES[@]}" | sed 's/, $//')
     ELLIPSIS=""
     if (( STALE_COUNT > ${#STALE_FILES[@]} )); then

@@ -553,9 +553,8 @@ enum Dispatcher {
 
     // MARK: plan_rename
 
-    /// Emits a pretty-printed JSON plan inside a ```json fence. A
-    /// freshness warning appends below the fence when any range path
-    /// was edited this session.
+    /// Emits a pretty-printed JSON plan inside a ```json fence, with a
+    /// freshness warning appended when any range path was edited this session.
     private static func planRename(_ args: [String: Value], _ processor: RequestProcessor) async -> CallTool.Result {
         guard let usr = args["usr"]?.stringValue, !usr.isEmpty else {
             return error("plan_rename requires 'usr'")

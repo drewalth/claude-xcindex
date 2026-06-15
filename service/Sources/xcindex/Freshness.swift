@@ -3,8 +3,9 @@ import Foundation
 
 // Session-edited-file state shared with the PostToolUse + SessionStart bash hooks.
 //
-// Path derivation MUST match hooks/session-start.sh and hooks/post-edit.sh
-// byte-for-byte: $TMPDIR/xcindex-edited-<sha1(cwd) first 12 chars>.txt.
+// CONTRACT: path derivation MUST match hooks/session-start.sh and
+// hooks/post-edit.sh byte-for-byte:
+// $TMPDIR/xcindex-edited-<sha1(cwd) first 12 chars>.txt
 // CLAUDE_PROJECT_DIR overrides cwd.
 enum Freshness {
     static func stateFilePath() -> String {
