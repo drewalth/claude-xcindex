@@ -16,13 +16,13 @@ struct Request: Codable {
     /// Symbol name to search for (human-readable, e.g. "MyViewController")
     let symbolName: String?
 
-    /// Unified Symbol Resolution identifier — used for direct USR lookups
+    /// Unified Symbol Resolution identifier — for direct USR lookups
     let usr: String?
 
-    /// Source file path — used for blastRadius
+    /// Source file path — for blastRadius
     let filePath: String?
 
-    /// Proposed new identifier — used for planRename
+    /// Proposed new identifier — for planRename
     let newName: String?
 
     init(

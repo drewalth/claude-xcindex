@@ -28,8 +28,7 @@ sigtermSource.resume()
 
 // Last-resort cleanup: if we exit through a path that skips the
 // signal handlers (uncaught fatal, library atexit), SIGTERM any
-// sourcekit-lsp still tracked. SIGKILL on us bypasses this, but
-// orphaned children would also show up in `ps aux`.
+// tracked sourcekit-lsp children. SIGKILL on us bypasses this.
 atexit {
     xcindexTerminateTrackedChildren()
 }

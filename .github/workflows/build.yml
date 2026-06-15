@@ -20,11 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install SwiftFormat
-        run: brew install swiftformat
+      - name: Install SwiftLint & SwiftFormat
+        run: brew install swiftlint swiftformat
 
-      - name: SwiftFormat (check)
-        run: swiftformat --lint .
+      - name: Lint (SwiftLint + SwiftFormat check)
+        run: make lint
+
+      - name: Hook regression tests
+        run: make test-hooks
 
   build:
     name: build & test
@@ -46,17 +49,14 @@ jobs:
             swiftpm-${{ runner.os }}-
 
       - name: Build (release)
-        run: ./build.sh
+        run: make build
 
       - name: Swift tests
-        working-directory: service
-        env:
-          # External-fixture suites (TCACoverageHarness, SwiftLogCoverageHarness)
-          # are authoritatively run by the `fixture (<name>)` matrix legs, which
-          # fetch the pinned SHA and enforce the verified-symbol floor. Skip them
-          # here so this job doesn't fail on unchecked-out fixtures.
-          XCINDEX_ALLOW_FIXTURE_SKIP: "1"
-        run: swift test --parallel
+        # `make test_ci` sets XCINDEX_ALLOW_FIXTURE_SKIP=1 so the external-fixture
+        # suites (TCACoverageHarness, SwiftLogCoverageHarness) are skipped here.
+        # They are authoritatively run by the `fixture (<name>)` matrix legs, which
+        # fetch the pinned SHA and enforce the verified-symbol floor.
+        run: make test_ci
 
       - name: Enforce canary coverage thresholds
         # The CoverageHarnessTests suite writes tests/coverage/coverage-summary.json

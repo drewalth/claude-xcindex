@@ -32,7 +32,7 @@ private enum Schema {
     static func object(properties: [String: Value], required: [String] = []) -> Value {
         var obj: [String: Value] = [
             "type": .string("object"),
-            "properties": .object(properties),
+            "properties": .object(properties)
         ]
         if !required.isEmpty {
             obj["required"] = .array(required.map { .string($0) })
@@ -43,14 +43,14 @@ private enum Schema {
     static func string(_ description: String) -> Value {
         .object([
             "type": .string("string"),
-            "description": .string(description),
+            "description": .string(description)
         ])
     }
 
     static func integer(_ description: String, min: Int? = nil, max: Int? = nil, default: Int? = nil) -> Value {
         var obj: [String: Value] = [
             "type": .string("integer"),
-            "description": .string(description),
+            "description": .string(description)
         ]
         if let min { obj["minimum"] = .int(min) }
         if let max { obj["maximum"] = .int(max) }
@@ -69,7 +69,7 @@ private enum Schema {
             "indexStorePath": string(
                 "Absolute path to the IndexStore DataStore directory. " +
                     "Overrides projectPath. Use status to find this path."
-            ),
+            )
         ]
     }
 }
@@ -85,7 +85,7 @@ private enum ToolDefinitions {
         findConformances,
         blastRadius,
         status,
-        planRename,
+        planRename
     ]
 
     static let findReferences = Tool(
@@ -108,7 +108,7 @@ private enum ToolDefinitions {
                     "Cap on the number of occurrences returned (default 100, max 500). " +
                         "For very common symbols, increase only if you need the full picture.",
                     min: 1, max: 500, default: 100
-                ),
+                )
             ],
             required: ["symbolName"]
         )
@@ -128,7 +128,7 @@ private enum ToolDefinitions {
                         "E.g. 'URLSession', 'fetchUser', 'AuthDelegate'."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["symbolName"]
         )
@@ -144,7 +144,7 @@ private enum ToolDefinitions {
             properties: [
                 "usr": Schema.string(usrDescription),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["usr"]
         )
@@ -160,7 +160,7 @@ private enum ToolDefinitions {
             properties: [
                 "usr": Schema.string(usrDescription),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["usr"]
         )
@@ -177,7 +177,7 @@ private enum ToolDefinitions {
             properties: [
                 "usr": Schema.string(usrDescription),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["usr"]
         )
@@ -199,7 +199,7 @@ private enum ToolDefinitions {
                         "E.g. '/Users/me/MyApp/Sources/AuthService.swift'."
                 ),
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ],
             required: ["filePath"]
         )
@@ -216,7 +216,7 @@ private enum ToolDefinitions {
         inputSchema: Schema.object(
             properties: [
                 "projectPath": Schema.projectParams["projectPath"]!,
-                "indexStorePath": Schema.projectParams["indexStorePath"]!,
+                "indexStorePath": Schema.projectParams["indexStorePath"]!
             ]
         )
     )
@@ -252,7 +252,7 @@ private enum ToolDefinitions {
                         "field is true and `summary` still reflects the full counts; " +
                         "re-invoke with a larger cap if you need the rest.",
                     min: 1, max: 5000, default: 500
-                ),
+                )
             ],
             required: ["usr", "newName"]
         )
@@ -361,10 +361,10 @@ enum Dispatcher {
         }
 
         var lines = ["Found \(symbols.count) symbol(s) named '\(symbolName)':\n"]
-        for s in symbols {
-            lines.append("  USR:  \(s.usr)")
-            lines.append("  Kind: \(s.kind)  Language: \(s.language)")
-            if let path = s.definitionPath, let line = s.definitionLine {
+        for symbol in symbols {
+            lines.append("  USR:  \(symbol.usr)")
+            lines.append("  Kind: \(symbol.kind)  Language: \(symbol.language)")
+            if let path = symbol.definitionPath, let line = symbol.definitionLine {
                 lines.append("  Defined at: \(path):\(line)")
             }
             lines.append("")
@@ -460,7 +460,11 @@ enum Dispatcher {
         }
         return .init(content: [text(lines.joined(separator: "\n"))])
     }
+}
 
+// MARK: - Dispatch (file-level + status tools)
+
+extension Dispatcher {
     // MARK: blast_radius
 
     private static func blastRadius(_ args: [String: Value], _ processor: RequestProcessor) async -> CallTool.Result {
@@ -483,36 +487,44 @@ enum Dispatcher {
             return .init(content: [text("No blast radius data returned.")])
         }
 
-        var lines: [String] = []
         let fileName = (filePath as NSString).lastPathComponent
-
-        if br.affectedFiles.isEmpty {
-            lines.append("No dependents found for '\(fileName)' — safe to edit in isolation.")
-        } else {
-            lines.append("Blast radius for '\(fileName)': \(br.affectedFiles.count) affected file(s)\n")
-            lines.append("Direct dependents:")
-            for f in br.directDependents { lines.append("  \(f)") }
-            if !br.coveringTests.isEmpty {
-                lines.append("\nCovering tests:")
-                for f in br.coveringTests { lines.append("  \(f)") }
-            }
-            let directSet = Set(br.directDependents)
-            let testsSet = Set(br.coveringTests)
-            let others = br.affectedFiles.filter { !directSet.contains($0) && !testsSet.contains($0) }
-            if !others.isEmpty {
-                lines.append("\nTransitive dependents (\(others.count)):")
-                for f in others.prefix(20) { lines.append("  \(f)") }
-                if others.count > 20 {
-                    lines.append("  … and \(others.count - 20) more")
-                }
-            }
-        }
+        var lines = blastRadiusLines(br, fileName: fileName)
 
         if let note = Freshness.staleNote(involvedPaths: [filePath]) {
             lines.append("\n⚠️  \(note)")
         }
 
         return .init(content: [text(lines.joined(separator: "\n"))])
+    }
+
+    /// Format the blast-radius result into output lines (without the
+    /// freshness note, which the caller appends).
+    private static func blastRadiusLines(_ br: BlastRadiusResult, fileName: String) -> [String] {
+        guard !br.affectedFiles.isEmpty else {
+            return ["No dependents found for '\(fileName)' — safe to edit in isolation."]
+        }
+
+        var lines = [
+            "Blast radius for '\(fileName)': \(br.affectedFiles.count) affected file(s)\n",
+            "Direct dependents:"
+        ]
+        for file in br.directDependents { lines.append("  \(file)") }
+        if !br.coveringTests.isEmpty {
+            lines.append("\nCovering tests:")
+            for file in br.coveringTests { lines.append("  \(file)") }
+        }
+
+        let directSet = Set(br.directDependents)
+        let testsSet = Set(br.coveringTests)
+        let others = br.affectedFiles.filter { !directSet.contains($0) && !testsSet.contains($0) }
+        if !others.isEmpty {
+            lines.append("\nTransitive dependents (\(others.count)):")
+            for file in others.prefix(20) { lines.append("  \(file)") }
+            if others.count > 20 {
+                lines.append("  … and \(others.count - 20) more")
+            }
+        }
+        return lines
     }
 
     // MARK: status
@@ -537,12 +549,12 @@ enum Dispatcher {
         let editedFiles = Freshness.getEditedFiles().sorted()
         var lines: [String] = [
             "Index store: \(status.indexStorePath)",
-            "Last updated: \(status.indexMtime ?? "unknown")",
+            "Last updated: \(status.indexMtime ?? "unknown")"
         ]
 
         if !editedFiles.isEmpty {
             lines.append("\nFiles edited this session: \(editedFiles.count)")
-            for f in editedFiles { lines.append("  \(f)") }
+            for file in editedFiles { lines.append("  \(file)") }
             lines.append("\n⚠️  These files were edited after the index was built. Consider rebuilding in Xcode for accurate results.")
         } else {
             lines.append("\nNo source files edited this session — index should be current.")
@@ -553,9 +565,8 @@ enum Dispatcher {
 
     // MARK: plan_rename
 
-    /// Emits a pretty-printed JSON plan inside a ```json fence. A
-    /// freshness warning appends below the fence when any range path
-    /// was edited this session.
+    /// Emits a pretty-printed JSON plan inside a ```json fence, with a
+    /// freshness warning appended when any range path was edited this session.
     private static func planRename(_ args: [String: Value], _ processor: RequestProcessor) async -> CallTool.Result {
         guard let usr = args["usr"]?.stringValue, !usr.isEmpty else {
             return error("plan_rename requires 'usr'")
@@ -606,8 +617,8 @@ enum Dispatcher {
 
     // MARK: helpers
 
-    private static func text(_ s: String) -> Tool.Content {
-        .text(text: s, annotations: nil, _meta: nil)
+    private static func text(_ string: String) -> Tool.Content {
+        .text(text: string, annotations: nil, _meta: nil)
     }
 
     private static func error(_ message: String) -> CallTool.Result {

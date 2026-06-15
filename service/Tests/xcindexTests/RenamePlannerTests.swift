@@ -3,6 +3,9 @@ import IndexStoreDB
 import Testing
 @testable import xcindex
 
+// Long, exhaustive suite with loop-index counters; relax for this test file.
+// swiftlint:disable type_body_length identifier_name
+
 /// Unit + integration tests for the indexstore-only first pass of
 /// `RenamePlanner`. These lock in:
 ///   • the happy-path tier assignment (green-indexstore by default)
@@ -353,7 +356,7 @@ struct RenamePlannerTests {
             range(.redStale),
             range(.yellowDisagreement),
             range(.yellowLspOnly),
-            range(.greenVerified),
+            range(.greenVerified)
         ]
         let summary = PlanSummary.counting(mixed)
         #expect(summary.greenIndexstore == 2)
@@ -571,3 +574,5 @@ private enum FixtureHolder {
         return built
     }
 }
+
+// swiftlint:enable type_body_length identifier_name

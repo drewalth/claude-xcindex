@@ -18,7 +18,7 @@ let package = Package(
         // whole sourcekit-lsp bundle) keeps the binary small — we skip
         // the in-process LSP service, Clang/Swift language services,
         // and BuildServerIntegration that we don't need.
-        .package(url: "https://github.com/swiftlang/swift-tools-protocols.git", branch: "main"),
+        .package(url: "https://github.com/swiftlang/swift-tools-protocols.git", branch: "main")
     ],
     targets: [
         .executableTarget(
@@ -27,7 +27,7 @@ let package = Package(
                 .product(name: "IndexStoreDB", package: "indexstore-db"),
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "LanguageServerProtocol", package: "swift-tools-protocols"),
-                .product(name: "LanguageServerProtocolTransport", package: "swift-tools-protocols"),
+                .product(name: "LanguageServerProtocolTransport", package: "swift-tools-protocols")
             ],
             path: "Sources/xcindex"
         ),
@@ -35,6 +35,6 @@ let package = Package(
             name: "xcindexTests",
             dependencies: ["xcindex"],
             path: "Tests/xcindexTests"
-        ),
+        )
     ]
 )

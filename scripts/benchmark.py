@@ -5,7 +5,7 @@ Usage:
     scripts/benchmark.py /path/to/Project.xcodeproj
 
 Emits a markdown report to stdout and writes scripts/benchmark-results.md.
-Requires: a built xcindex binary (run ./build.sh first).
+Requires: a built xcindex binary (run make build first).
 
 Methodology:
 - Tool latency: cold = first query in a fresh subprocess (includes opening
@@ -46,7 +46,7 @@ def find_xcindex() -> Path:
         p = REPO_ROOT / "mcp" / "swift-service" / ".build" / variant / "xcindex"
         if p.exists() and os.access(p, os.X_OK):
             return p
-    sys.exit("xcindex binary not found. Run ./build.sh first.")
+    sys.exit("xcindex binary not found. Run make build first.")
 
 
 XCI = find_xcindex()

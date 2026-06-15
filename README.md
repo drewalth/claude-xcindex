@@ -138,8 +138,9 @@ catalogue in [docs/troubleshooting.md](docs/troubleshooting.md).
 ## Development
 
 ```sh
-./build.sh --debug          # debug build
-cd service && swift test    # run tests
+make build-debug    # debug build
+make test           # run tests
+make help           # list all dev targets
 ```
 
 ```
@@ -152,7 +153,8 @@ claude-xcindex/
 ├── agents/swift-refactor-specialist.md
 ├── commands/                      # /xcindex-setup, /xcindex-status
 ├── hooks/                         # session-start.sh, post-edit.sh, pre-grep.sh
-└── build.sh
+├── scripts/                       # dev-only: build.sh, fixtures, benchmarks
+└── Makefile                       # dev task runner (build, test, lint, format)
 ```
 
 PRs welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md). Please open an

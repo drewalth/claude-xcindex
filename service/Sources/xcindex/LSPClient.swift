@@ -25,19 +25,17 @@ actor LSPClient {
     /// errors from some server builds and wastes round-trips regardless.
     private var openedDocuments: Set<DocumentURI> = []
 
-    /// Server capabilities advertised in the initialize response.
-    /// Used by the doctor command + reconciliation path to decide
-    /// which semantic queries the live server supports.
+    /// Capabilities advertised in the initialize response. The doctor
+    /// command and reconciliation path use these to decide which
+    /// semantic queries the live server supports.
     var serverCapabilities: ServerCapabilities {
         capabilities
     }
 
-    /// True when the cached client is still usable: state is
-    /// `.running` *and* the subprocess has not exited. Callers evict
-    /// from their cache when this flips false — the library reports a
-    /// dead connection as a `.protocolError`, which is
-    /// indistinguishable from a live server returning a real
-    /// ResponseError at the taxonomy level.
+    /// True when the cached client is still usable. Callers must evict
+    /// when this flips false: the library reports a dead connection as
+    /// a `.protocolError`, indistinguishable at the taxonomy level from
+    /// a live server returning a real ResponseError.
     var isAlive: Bool {
         state == .running && process.isRunning
     }
@@ -119,14 +117,12 @@ actor LSPClient {
             stderrLoggingCategory: "xcindex-lsp",
             client: handler,
             terminationHandler: { reason in
-                // Surface unexpected exits (crash, OOM, SIGKILL from
-                // the OS) to stderr so operators see *why* the next
-                // MCP call degraded to `.sourcekitLspProcessTerminated`.
-                // Expected shutdown paths set state to `.shuttingDown`
-                // and drive termination themselves; we can't read that
-                // actor-isolated flag from this non-isolated callback,
-                // so we always log — a duplicate line during normal
-                // shutdown is cheap, and silence during a crash is not.
+                // Surface unexpected exits (crash, OOM, OS SIGKILL) so
+                // operators see why the next MCP call degraded. We can't
+                // read the actor-isolated `state` flag from this
+                // non-isolated callback to distinguish expected shutdown,
+                // so we always log: a duplicate line during normal
+                // shutdown is cheap, silence during a crash is not.
                 let detail: String =
                     switch reason {
                     case .exited(let code): "exit \(code)"
@@ -137,25 +133,7 @@ actor LSPClient {
             }
         )
 
-        // Initialize handshake. Minimal client capabilities — we only
-        // use references; omit completion, hover, diagnostics, etc.
-        let initRequest = InitializeRequest(
-            processId: Int(ProcessInfo.processInfo.processIdentifier),
-            rootPath: nil,
-            rootURI: DocumentURI(workspaceRoot),
-            initializationOptions: nil,
-            capabilities: ClientCapabilities(
-                workspace: nil,
-                textDocument: TextDocumentClientCapabilities(
-                    references: .init()
-                ),
-                window: nil,
-                general: nil,
-                experimental: nil
-            ),
-            trace: .off,
-            workspaceFolders: [WorkspaceFolder(uri: DocumentURI(workspaceRoot))]
-        )
+        let initRequest = makeInitializeRequest(workspaceRoot: workspaceRoot)
 
         // Track PID for atexit fallback before we await anything that
         // could fail — if the parent dies between now and the handshake,
@@ -171,20 +149,43 @@ actor LSPClient {
                 timeoutError: LSPClientError.initializeTimeout
             )
         } catch {
-            // Best-effort cleanup if initialize failed.
+            // Best-effort cleanup; shutdown() never runs for a client we
+            // failed to return.
             connection.close()
             if process.isRunning { process.terminate() }
             xcindexUntrackChildPID(process.processIdentifier)
             throw error
         }
 
-        // Required post-initialize notification.
+        // Protocol requires `initialized` before any other request.
         connection.send(InitializedNotification())
 
         return LSPClient(
             connection: connection,
             process: process,
             capabilities: initResult.capabilities
+        )
+    }
+
+    /// Minimal `initialize` request — we only use references, so omit
+    /// completion, hover, diagnostics, and other client capabilities.
+    private static func makeInitializeRequest(workspaceRoot: URL) -> InitializeRequest {
+        InitializeRequest(
+            processId: Int(ProcessInfo.processInfo.processIdentifier),
+            rootPath: nil,
+            rootURI: DocumentURI(workspaceRoot),
+            initializationOptions: nil,
+            capabilities: ClientCapabilities(
+                workspace: nil,
+                textDocument: TextDocumentClientCapabilities(
+                    references: .init()
+                ),
+                window: nil,
+                general: nil,
+                experimental: nil
+            ),
+            trace: .off,
+            workspaceFolders: [WorkspaceFolder(uri: DocumentURI(workspaceRoot))]
         )
     }
 
@@ -377,18 +378,17 @@ final class OneshotFlag: @unchecked Sendable {
 
 // MARK: - No-op message handler
 //
-// sourcekit-lsp sends server-initiated requests we don't handle
-// meaningfully: window/workDoneProgress/create, client/registerCapability,
-// workspace/configuration. We reply with the default success payload
-// so the server doesn't log errors / stall. Any unhandled message type
-// flows through the library's default (returning methodNotFound).
+// Handles server-initiated requests that reach us. The request branch
+// acks any VoidResponse-typed request (window/workDoneProgress/create,
+// client/registerCapability, workspace/configuration) to keep the server
+// from stalling — but those only arrive if registered in
+// `builtinRequests` below, which is currently empty by design.
 //
-// Notifications: window/logMessage and window/showMessage carry
-// server-side diagnostics that are the only signal when something
-// goes wrong inside sourcekit-lsp ("couldn't load module X",
-// "index-store not found"). Dropping them silently makes plan_rename
-// degradations unexplainable. We forward those to stderr with the
-// same `xcindex-lsp:` prefix the library uses for stderr passthrough.
+// window/logMessage and window/showMessage notifications carry the only
+// server-side signal when something goes wrong ("couldn't load module
+// X", "index-store not found"); dropping them silently makes plan_rename
+// degradations unexplainable. We forward both to stderr under the same
+// `xcindex-lsp:` prefix the library uses for stderr passthrough.
 
 final class NoopMessageHandler: MessageHandler, Sendable {
     func handle(_ notification: some NotificationType) {
@@ -416,15 +416,13 @@ final class NoopMessageHandler: MessageHandler, Sendable {
         id _: RequestID,
         reply: @Sendable @escaping (LSPResult<Request.Response>) -> Void
     ) {
-        // Return a default-constructed success response where the
-        // response type allows it; otherwise fall through to methodNotFound.
-        // For the common sourcekit-lsp server-initiated requests
-        // (WorkDoneProgressCreateRequest, RegisterCapabilityRequest,
-        // ConfigurationRequest) the Response type is `VoidResponse` or
-        // an array we can default.
+        // The common sourcekit-lsp server-initiated requests
+        // (WorkDoneProgressCreate, RegisterCapability, Configuration)
+        // return VoidResponse; satisfy those, reject the rest.
         if Request.Response.self == VoidResponse.self {
-            // Type equality check above makes this runtime-safe; Swift
+            // The type-equality check above makes this cast safe; Swift
             // generics can't propagate that equality to the cast site.
+            // swiftlint:disable:next force_cast
             reply(.success(VoidResponse() as! Request.Response))
         } else {
             reply(.failure(.methodNotFound(Request.method)))
@@ -441,9 +439,9 @@ final class NoopMessageHandler: MessageHandler, Sendable {
 // actually sends, not the full LSP vocabulary.
 
 private let builtinRequests: [_RequestType.Type] = [
-    // Server-initiated requests we expect during initialization and
-    // workspace setup. NoopMessageHandler short-circuits all of them.
-    // Intentionally narrow; extend as we discover more server asks.
+    // Empty: sourcekit-lsp's setup requests are optional, so we let them
+    // hit the library default (methodNotFound) rather than register and
+    // ack each. Add a type here only if a missing ack proves to stall it.
 ]
 
 private let builtinNotifications: [NotificationType.Type] = [
@@ -452,7 +450,7 @@ private let builtinNotifications: [NotificationType.Type] = [
     // only signal when sourcekit-lsp silently returns zero locations.
     // NoopMessageHandler forwards both to stderr.
     LogMessageNotification.self,
-    ShowMessageNotification.self,
+    ShowMessageNotification.self
 ]
 
 // MARK: - Errors

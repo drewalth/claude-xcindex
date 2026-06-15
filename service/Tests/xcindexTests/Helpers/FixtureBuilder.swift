@@ -1,5 +1,8 @@
 import Foundation
 
+// Long sequential build routines drive real SwiftPM builds; relax for this helper.
+// swiftlint:disable function_body_length
+
 /// Builds the `Tests/Fixtures/CanaryApp` SwiftPM package with `swift
 /// build`, producing a real IndexStore that the query tests can read.
 ///
@@ -85,7 +88,7 @@ enum FixtureBuilder {
             "build",
             "--package-path", packagePath.path,
             "--scratch-path", scratch.path,
-            "-c", "debug",
+            "-c", "debug"
         ]
 
         // Drain stdout/stderr concurrently. Without this, big builds
@@ -320,3 +323,5 @@ private func runCommand(_ path: String, args: [String]) -> String? {
         return nil
     }
 }
+
+// swiftlint:enable function_body_length

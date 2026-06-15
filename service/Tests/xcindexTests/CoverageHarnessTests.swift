@@ -2,6 +2,10 @@ import Foundation
 import Testing
 @testable import xcindex
 
+// Harness nests decoded ground-truth shapes and runs a long end-to-end
+// check; relax structural rules for this test file.
+// swiftlint:disable nesting function_body_length
+
 /// Coverage harness for the canary fixture.
 ///
 /// Reads `tests/coverage/canary.json`, runs `RenamePlanner` against
@@ -297,3 +301,5 @@ private enum FixtureHolder {
         return built
     }
 }
+
+// swiftlint:enable nesting function_body_length

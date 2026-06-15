@@ -14,7 +14,7 @@ struct MCPServerDispatcherTests {
     func planRenameMissingNewName() async {
         let processor = RequestProcessor()
         let args: [String: Value] = [
-            "usr": .string("s:example"),
+            "usr": .string("s:example")
         ]
         let result = await Dispatcher.handle(
             name: "plan_rename",
@@ -31,7 +31,7 @@ struct MCPServerDispatcherTests {
     func planRenameMissingUSR() async {
         let processor = RequestProcessor()
         let args: [String: Value] = [
-            "newName": .string("Renamed"),
+            "newName": .string("Renamed")
         ]
         let result = await Dispatcher.handle(
             name: "plan_rename",
@@ -63,7 +63,7 @@ struct MCPServerDispatcherTests {
             "usr": .string(usr),
             "newName": .string("AccountService"),
             "projectPath": .string(packageRoot.path),
-            "indexStorePath": .string(fixture.storePath),
+            "indexStorePath": .string(fixture.storePath)
         ]
         let result = await Dispatcher.handle(
             name: "plan_rename",
@@ -102,7 +102,7 @@ struct MCPServerDispatcherTests {
             "newName": .string("AccountService"),
             "projectPath": .string(packageRoot.path),
             "indexStorePath": .string(fixture.storePath),
-            "maxRanges": .int(1),
+            "maxRanges": .int(1)
         ]
         let result = await Dispatcher.handle(
             name: "plan_rename",

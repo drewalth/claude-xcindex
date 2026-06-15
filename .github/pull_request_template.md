@@ -20,7 +20,7 @@ Thanks for contributing to xcindex!
 ## How was this tested?
 
 <!--
-- `cd service && swift test`
+- `make test`
 - Manual: describe the Claude Code session you ran this through.
 - New or updated tests if behavior changed.
 -->
@@ -29,8 +29,8 @@ Thanks for contributing to xcindex!
 
 - [ ] Conventional Commits-compatible PR title.
 - [ ] Tests added/updated if behavior changed.
-- [ ] `./build.sh` passes locally.
-- [ ] `cd service && swift test` passes locally.
+- [ ] `make build` passes locally.
+- [ ] `make test` passes locally.
 - [ ] `CHANGELOG.md`'s `[Unreleased]` section updated if user-visible.
 - [ ] Docs updated (`README.md`, `CLAUDE.md`, or `docs/`) if applicable.
 - [ ] No new telemetry, analytics, or remote pings added (this plugin is local-only by design).

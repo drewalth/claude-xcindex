@@ -2,12 +2,15 @@
 # Build the xcindex Swift MCP server.
 #
 # Usage:
-#   ./build.sh           # release build (default)
-#   ./build.sh --debug   # debug build
+#   ./scripts/build.sh           # release build (default)
+#   ./scripts/build.sh --debug   # debug build
+#
+# Prefer `make build` / `make build-debug` from the repo root.
 
 set -euo pipefail
 
-PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve the repo root (this script lives in scripts/).
+PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_DIR="${PLUGIN_DIR}/service"
 
 MODE="release"

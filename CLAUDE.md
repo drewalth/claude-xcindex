@@ -12,17 +12,25 @@ subagent, and a slash command. See `README.md` for user-facing docs.
 ## Build & run
 
 ```sh
-./build.sh                         # release build
-./build.sh --debug                 # debug build
+make build                         # release build
+make build-debug                   # debug build
+make test                          # run tests
+make test_ci                       # tests as CI runs them (skips fixtures)
+make lint                          # swiftformat --lint .
+make format                        # swiftformat .
+make help                          # list all targets
 
-cd service && swift build -c release
-cd service && swift test
 cd service && swift test --filter xcindexTests.example   # single test
 ```
 
-`build.sh` just wraps `swift build -c release` in the `service/` directory.
-Re-run after `git pull`. The binary Claude Code launches is
+The `Makefile` at the repo root is the canonical dev entrypoint and is what
+CI invokes. Its `build` target wraps `scripts/build.sh`, which runs
+`swift build -c release` in the `service/` directory. Re-run after
+`git pull`. The binary Claude Code launches is
 `service/.build/release/xcindex`.
+
+Developer scripts live under `scripts/` (e.g. `scripts/build.sh`); they never
+ship with the plugin. Distributed scripts are in `hooks/` and `bin/`.
 
 ## Architecture
 

@@ -9,9 +9,9 @@ final class IndexQuerier {
 
     /// - Parameter storePath: Path to the `DataStore` directory inside DerivedData.
     init(storePath: String) throws {
-        // IndexStoreDB creates its own SQLite cache in `databasePath`.
-        // Use a deterministic temp path keyed on the store path so the cache
-        // survives multiple invocations without being rebuilt each time.
+        // Key IndexStoreDB's SQLite cache (`databasePath`) on the store path
+        // deterministically so it survives across invocations instead of being
+        // rebuilt each time.
         let storeKey = storePath
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: " ", with: "_")
@@ -40,25 +40,18 @@ final class IndexQuerier {
 
     // MARK: - findRefs
 
-    /// Find all occurrences of a symbol by name.
-    ///
-    /// Workflow:
-    ///  1. Use `canonicalOccurrences(ofName:)` to find exact-name matches and
-    ///     collect their USRs.
-    ///  2. Fall back to `forEachCanonicalSymbolOccurrence(containing:...)` if no
-    ///     exact hits (e.g. operator or partial name given).
-    ///  3. For each USR, fetch all occurrences via `occurrences(ofUSR:roles:)`.
-    ///  4. Return deduplicated list sorted by file+line.
+    /// All occurrences of a symbol by name, deduplicated and sorted by
+    /// file+line. Exact-name canonical lookup is the fast path; the
+    /// substring scan is a fallback for operators or partial names, where
+    /// `canonicalOccurrences(ofName:)` returns nothing.
     func findRefs(symbolName: String) -> [OccurrenceResult] {
         var usrs = Set<String>()
 
-        // Exact-name canonical lookup (fast path)
         let canonical = db.canonicalOccurrences(ofName: symbolName)
         for occ in canonical {
             usrs.insert(occ.symbol.usr)
         }
 
-        // Pattern-match fallback if no exact hits
         if usrs.isEmpty {
             db.forEachCanonicalSymbolOccurrence(
                 containing: symbolName,
@@ -70,7 +63,7 @@ final class IndexQuerier {
                 if occ.symbol.name == symbolName {
                     usrs.insert(occ.symbol.usr)
                 }
-                return true // keep iterating
+                return true // IndexStoreDB iterates while the closure returns true
             }
         }
 
@@ -106,8 +99,8 @@ final class IndexQuerier {
 
     // MARK: - findSymbol
 
-    /// Return candidate symbols matching `symbolName` with kind, language, and
-    /// definition location. Useful as a disambiguation step before findRefs/findDefinition.
+    /// Candidate symbols matching `symbolName` with kind, language, and
+    /// definition location — the disambiguation step before findRefs/findDefinition.
     func findSymbol(symbolName: String) -> [SymbolResult] {
         var seen = Set<String>()
         var results: [SymbolResult] = []
@@ -161,11 +154,9 @@ final class IndexQuerier {
 
     // MARK: - findOverrides
 
-    /// Return all symbols that override the method/property identified by `usr`.
-    ///
-    /// Uses the `overrideOf` relation to find the overriding implementations.
+    /// Symbols overriding the method/property `usr`, via the `overrideOf`
+    /// relation.
     func findOverrides(usr: String) -> [OccurrenceResult] {
-        // Symbols that have `overrideOf` relation pointing to our USR
         let related = db.occurrences(relatedToUSR: usr, roles: [.overrideOf])
         var seen = Set<String>()
         var results: [OccurrenceResult] = []
@@ -192,21 +183,14 @@ final class IndexQuerier {
 
     // MARK: - findConformances
 
-    /// Return all types that conform to the protocol identified by `usr`.
+    /// Types conforming to the protocol `usr`, one result per type at its
+    /// definition site.
     ///
-    /// Swift's IndexStoreDB does not record a direct class→protocol
-    /// relation; conformance is only recorded as a per-method
-    /// `.overrideOf` relation from each witness to the corresponding
-    /// protocol requirement. To enumerate conforming types we:
-    ///   1. Collect the protocol's requirements (children of the
-    ///      protocol USR via `.childOf`).
-    ///   2. For each requirement, find the overriding witnesses via
-    ///      `.overrideOf`.
-    ///   3. From each witness occurrence, walk its relations to find
-    ///      the enclosing type (`.childOf`) — that's the conforming
-    ///      type.
-    ///   4. Return one OccurrenceResult per unique conforming type,
-    ///      located at the type's definition site.
+    /// IndexStoreDB records no direct class→protocol relation; conformance
+    /// shows up only as a per-method `.overrideOf` from each witness to its
+    /// protocol requirement. So: gather the protocol's requirements (its
+    /// `.childOf` children), find each requirement's `.overrideOf` witnesses,
+    /// then walk each witness's `.childOf` relation up to its enclosing type.
     func findConformances(usr: String) -> [OccurrenceResult] {
         let requirements = db.occurrences(relatedToUSR: usr, roles: [.childOf])
         let requirementUSRs = Set(requirements.map(\.symbol.usr))
@@ -252,10 +236,9 @@ final class IndexQuerier {
     ///
     /// This is the token-saving query: Claude reads only these files, not the whole repo.
     func blastRadius(filePath: String) -> BlastRadiusResult {
-        // Step 1: find all symbols defined in `filePath`
         let definedSymbols = db.symbols(inFilePath: filePath)
 
-        // Step 2: for each symbol, find all reference sites outside `filePath`
+        // Direct dependents: reference sites of those symbols outside `filePath`.
         var directCallerFiles = Set<String>()
         for symbol in definedSymbols {
             let refs = occurrences(
@@ -268,8 +251,8 @@ final class IndexQuerier {
             }
         }
 
-        // Step 3: one hop of transitive callers
-        // Find symbols defined in directCallerFiles, then their callers
+        // Exactly one hop of transitive callers: callers of the direct
+        // dependents' symbols. Deliberately not closed transitively.
         var transitiveFiles = Set<String>()
         for callerFile in directCallerFiles {
             let callerSymbols = db.symbols(inFilePath: callerFile)
@@ -287,7 +270,7 @@ final class IndexQuerier {
         let allAffected = Array(directCallerFiles.union(transitiveFiles)).sorted()
         let directDeps = directCallerFiles.sorted()
 
-        // Heuristic: test files contain "Test" or "Spec" in their filename
+        // Heuristic only: filename contains "Test" or "Spec".
         let tests = allAffected.filter { path in
             let name = URL(fileURLWithPath: path).lastPathComponent
             return name.contains("Test") || name.contains("Spec")
@@ -305,7 +288,7 @@ final class IndexQuerier {
     /// Return freshness info about the index store.
     func status(storePath: String) -> StatusResult {
         let fm = FileManager.default
-        var indexMtime: String? = nil
+        var indexMtime: String?
 
         if let attrs = try? fm.attributesOfItem(atPath: storePath),
            let mtime = attrs[.modificationDate] as? Date {
@@ -316,7 +299,7 @@ final class IndexQuerier {
         return StatusResult(
             indexStorePath: storePath,
             indexMtime: indexMtime,
-            staleFileCount: 0, // populated by the TS layer which tracks session edits
+            staleFileCount: 0, // session-edit counts are layered on elsewhere (Freshness)
             staleFiles: [],
             summary: indexMtime == nil
                 ? "Index store not found at \(storePath)."
@@ -387,20 +370,19 @@ func loadIndexStoreLibrary() throws -> IndexStoreLibrary {
         xcrunContentsPath().map { $0 + "/SharedFrameworks/IndexStore.framework/Versions/A/IndexStore" },
         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib",
         "/Applications/Xcode.app/Contents/SharedFrameworks/IndexStore.framework/Versions/A/IndexStore",
-        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib",
+        "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libIndexStore.dylib"
     ]
 
-    for path in candidates.compactMap({ $0 }) {
-        if FileManager.default.fileExists(atPath: path) {
-            return try IndexStoreLibrary(dylibPath: path)
-        }
+    for path in candidates.compactMap({ $0 }) where FileManager.default.fileExists(atPath: path) {
+        return try IndexStoreLibrary(dylibPath: path)
     }
     throw IndexQuerierError.noIndexStoreLibrary
 }
 
-/// Use `xcrun --find libIndexStore.dylib` directly.
+/// Locate `libIndexStore.dylib` via the active toolchain: guard on an SDK
+/// being present (`xcrun --show-sdk-path`), then find `clang` with `xcrun`
+/// and derive the sibling `usr/lib/` path.
 private func xcrunDerivedToolchainPath() -> String? {
-    // xcrun can locate the dylib directly
     return runCommand("/usr/bin/xcrun", args: ["-f", "--show-sdk-path"])
         .flatMap { _ in
             runCommand("/usr/bin/xcrun", args: ["--find", "clang"])
@@ -433,7 +415,7 @@ private func xcrunContentsPath() -> String? {
 
 // MARK: - Process helper
 
-/// Run a command synchronously and return combined stdout, or nil on failure.
+/// Run a command synchronously and return its stdout, or nil on failure.
 func runCommand(_ path: String, args: [String]) -> String? {
     let proc = Process()
     proc.executableURL = URL(fileURLWithPath: path)
