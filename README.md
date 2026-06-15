@@ -139,9 +139,19 @@ catalogue in [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ```sh
 make build-debug    # debug build
-make test           # run tests
+make test           # run tests (expects external fixtures checked out)
+make test_ci        # run tests as CI does — skips uncheckout fixtures
+make test-hooks     # bash regression tests for the hooks
 make help           # list all dev targets
 ```
+
+`make test` runs the external-fixture coverage suites (TCA, swift-log), which
+need those repos checked out under `tests/fixtures/`. On a fresh clone they
+aren't present and the suites **fail by design** — a silent skip would register
+as a passing test with zero assertions. Either run `make test_ci`
+(sets `XCINDEX_ALLOW_FIXTURE_SKIP=1` and skips them, exactly as CI does), or
+fetch the fixtures first: `scripts/fetch-fixture.sh tca` and
+`scripts/fetch-fixture.sh swift-log`.
 
 ```
 claude-xcindex/
