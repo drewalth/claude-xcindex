@@ -16,6 +16,8 @@ excluded:
   - .build
   - .git
   - .github
+  - service/.build
+  - service/Tests/Fixtures
 
 disabled_rules:
   - trailing_whitespace
