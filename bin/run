@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Launcher for the xcindex MCP server. Called by Claude Code via .mcp.json.
+# Launcher for the xcindex MCP server. Called by Claude Code (.mcp.json) and
+# Cursor (mcp.json) — both invoke this script over stdio.
 #
 # Responsibilities:
 #   1. Ensure bin/xcindex (the Swift binary) is present. On first run we
@@ -12,6 +13,38 @@ set -euo pipefail
 PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BIN_DIR="${PLUGIN_ROOT}/bin"
 BINARY="${BIN_DIR}/xcindex"
+
+XCINDEX_MIN_XCODE=16
+
+preflight() {
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        echo "[xcindex] xcindex requires macOS — the Xcode symbol index is macOS-only." >&2
+        return 1
+    fi
+
+    if ! command -v xcodebuild >/dev/null 2>&1; then
+        echo "[xcindex] Xcode 16+ is required but xcodebuild is not on PATH." >&2
+        echo "[xcindex] Install Xcode 16+ from the App Store, then run: sudo xcode-select -s /Applications/Xcode.app" >&2
+        return 1
+    fi
+
+    local ver major
+    ver=$(xcodebuild -version 2>/dev/null | head -1 | awk '{print $2}')
+    major=${ver%%.*}
+
+    if [[ -z "$major" ]] || ! [[ "$major" =~ ^[0-9]+$ ]]; then
+        echo "[xcindex] Warning: could not determine Xcode version — proceeding anyway." >&2
+        return 0
+    fi
+
+    if (( major < XCINDEX_MIN_XCODE )); then
+        echo "[xcindex] Xcode $ver is too old — xcindex needs Xcode ${XCINDEX_MIN_XCODE}+." >&2
+        echo "[xcindex] Update Xcode from the App Store." >&2
+        return 1
+    fi
+
+    return 0
+}
 
 ensure_binary() {
     # Already cached.
@@ -46,5 +79,8 @@ ensure_binary() {
     return 1
 }
 
+# Guard before attempting to locate or download the binary — wrong OS or
+# missing Xcode means the binary won't work even if it exists.
+preflight || exit 1
 ensure_binary || exit 1
 exec "$BINARY" "$@"

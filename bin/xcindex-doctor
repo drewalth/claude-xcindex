@@ -35,6 +35,7 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && p
 PROJECT=""
 INSTALL=0
 EXIT=0
+XCINDEX_MIN_XCODE=16
 
 # -------- args --------------------------------------------------------------
 
@@ -65,21 +66,30 @@ section() { echo; echo "== $1 =="; }
 
 section "Xcode"
 
-if ! command -v xcode-select >/dev/null 2>&1; then
-    fail "xcode-select not found." "Install Xcode from the App Store."
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    fail "xcindex requires macOS (Xcode index is macOS-only)."
 else
-    if xcode_dir=$(xcode-select -p 2>/dev/null); then
-        pass "Xcode selected: $xcode_dir"
+    if ! command -v xcode-select >/dev/null 2>&1; then
+        fail "xcode-select not found." "Install Xcode from the App Store."
     else
-        fail "No Xcode selected." "Run: sudo xcode-select -s /Applications/Xcode.app"
+        if xcode_dir=$(xcode-select -p 2>/dev/null); then
+            pass "Xcode selected: $xcode_dir"
+        else
+            fail "No Xcode selected." "Run: sudo xcode-select -s /Applications/Xcode.app"
+        fi
     fi
-fi
 
-if command -v xcodebuild >/dev/null 2>&1; then
-    xb_version=$(xcodebuild -version 2>/dev/null | head -1)
-    pass "$xb_version"
-else
-    fail "xcodebuild not on PATH." "Install Xcode command line tools: xcode-select --install"
+    if command -v xcodebuild >/dev/null 2>&1; then
+        xb_version=$(xcodebuild -version 2>/dev/null | head -1)
+        xb_major=$(echo "$xb_version" | awk '{print $2}' | cut -d. -f1)
+        if [[ "$xb_major" =~ ^[0-9]+$ ]] && (( xb_major < XCINDEX_MIN_XCODE )); then
+            fail "$xb_version is too old — xcindex needs Xcode ${XCINDEX_MIN_XCODE}+." "Update Xcode from the App Store."
+        else
+            pass "$xb_version"
+        fi
+    else
+        fail "xcodebuild not on PATH." "Install Xcode command line tools: xcode-select --install"
+    fi
 fi
 
 # -------- libIndexStore -----------------------------------------------------

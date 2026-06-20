@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A Claude Code plugin that wraps Xcode's pre-built SourceKit symbol index
-(`indexstore-db`) as MCP tools so Claude can do semantic Swift/ObjC symbol
-lookups instead of textual `grep`. Ships an MCP server, skills, hooks, a
-subagent, and a slash command. See `README.md` for user-facing docs.
+A plugin for Claude Code and Cursor that wraps Xcode's pre-built SourceKit
+symbol index (`indexstore-db`) as MCP tools for semantic Swift/ObjC symbol
+lookups instead of textual `grep`. Ships an MCP server and skills shared
+between both clients; hooks, a subagent, and slash commands are Claude Code
+only. See `README.md` for user-facing docs.
 
 ## Build & run
 
@@ -105,6 +106,8 @@ bash so the hook can warn before any MCP call.
 
 ## Plugin packaging
 
+### Claude Code files
+
 - `.claude-plugin/plugin.json` — plugin manifest (name, version, description).
 - `.mcp.json` — MCP server registration; uses `${CLAUDE_PLUGIN_ROOT}` so paths
   resolve wherever Claude Code installs the plugin.
@@ -116,6 +119,31 @@ bash so the hook can warn before any MCP call.
   explicit `tools:` allowlist. Main session delegates here so rename work
   doesn't balloon the parent context.
 - `commands/xcindex-status.md` — `/xcindex-status` slash command.
+
+### Cursor files
+
+- `.cursor-plugin/plugin.json` — Cursor plugin manifest.
+- `.cursor-plugin/marketplace.json` — Cursor marketplace submission metadata.
+- `mcp.json` (repo root) — Cursor MCP server registration:
+  `{"mcpServers":{"xcindex":{"command":"./bin/run"}}}`.
+
+### Dual-target model
+
+The repo targets both Claude Code and Cursor from one tree. `bin/run` is
+the shared MCP entry point; it self-locates the binary so no
+`${CLAUDE_PLUGIN_ROOT}` placeholder is needed. `skills/` is read by both
+clients unchanged.
+
+**macOS + Xcode 16+ only.** `bin/run` enforces this with a preflight check
+and exits with a human-readable error on other platforms. Cursor runs on
+Windows/Linux but xcindex does not — the Cursor manifest must document this.
+
+**Hook file collision risk.** Claude Code and Cursor both discover
+`hooks/hooks.json` by convention, but their schemas are incompatible. The
+current `hooks/hooks.json` is Claude Code-only. When Cursor hooks are added
+(deferred Phase 2), place them at a separate path (e.g. `cursor/hooks.json`)
+referenced via the Cursor manifest `hooks` field. Do NOT merge the two
+files.
 
 ## Conventions
 

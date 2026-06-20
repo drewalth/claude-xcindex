@@ -9,7 +9,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build build-debug test test_ci lint format test-hooks
+.PHONY: help build build-debug test test_ci lint format test-hooks cursor-lint
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -33,7 +33,17 @@ lint: ## Check formatting with SwiftFormat (no changes)
 format: ## Auto-format the codebase with SwiftFormat
 	swiftlint . --config .swiftlint.yml --fix && swiftformat .
 
-test-hooks: ## Run the bash hook regression tests
+test-hooks: ## Run the bash hook + launcher regression tests
 	bash tests/hooks/test-session-start.sh
 	bash tests/hooks/test-post-edit.sh
 	bash tests/hooks/test-pre-grep.sh
+	bash tests/test-preflight.sh
+
+cursor-lint: ## Validate Cursor packaging (manifests + mcp.json + referenced paths)
+	@for f in mcp.json .cursor-plugin/plugin.json .cursor-plugin/marketplace.json; do \
+		jq empty "$$f" >/dev/null && echo "  ok: $$f" || { echo "  invalid JSON: $$f"; exit 1; }; \
+	done
+	@test -d skills        || { echo "  missing skills/ (plugin.json 'skills' override)"; exit 1; }
+	@test -f assets/hero.png || { echo "  missing assets/hero.png (plugin.json 'logo')"; exit 1; }
+	@test -x bin/run       || { echo "  missing executable bin/run (mcp.json 'command')"; exit 1; }
+	@echo "cursor packaging OK"
