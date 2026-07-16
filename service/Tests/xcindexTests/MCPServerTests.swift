@@ -132,7 +132,9 @@ struct MCPServerDispatcherTests {
 
     private func firstText(_ content: [Tool.Content]) -> String {
         for item in content {
-            if case .text(let text, _, _) = item { return text }
+            if case .text(let text, _, _) = item {
+                return text
+            }
         }
         return ""
     }

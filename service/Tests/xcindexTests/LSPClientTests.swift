@@ -136,7 +136,9 @@ struct LSPClientTests {
             position: Position(line: 9, utf16index: 6)
         )
 
-        if locations.isEmpty { return }
+        if locations.isEmpty {
+            return
+        }
         let decls = locations.filter { loc in
             (loc.uri.fileURL?.path ?? "").hasSuffix("UserService.swift")
         }
@@ -291,7 +293,9 @@ private enum FixtureHolder {
     static func shared() throws -> BuiltIndex {
         lock.lock()
         defer { lock.unlock() }
-        if let built = _built { return built }
+        if let built = _built {
+            return built
+        }
         let built = try FixtureBuilder.buildCanaryIndex()
         _built = built
         return built

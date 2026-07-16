@@ -240,7 +240,9 @@ enum FixtureBuilder {
     private static func resolveSwift() throws -> String {
         if let out = runCommand("/usr/bin/xcrun", args: ["--find", "swift"]) {
             let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
+            if !trimmed.isEmpty {
+                return trimmed
+            }
         }
         if FileManager.default.fileExists(atPath: "/usr/bin/swift") {
             return "/usr/bin/swift"

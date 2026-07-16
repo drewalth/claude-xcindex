@@ -332,11 +332,17 @@ extension RenamePlanner {
         _ ranges: [RenameRange], lspKeys: Set<String>
     ) -> [RenameRange] {
         ranges.map { range in
-            if range.tier == .redStale { return range }
-            if lspKeys.contains(rangeKey(range)) { return range.withTier(.greenVerified) }
+            if range.tier == .redStale {
+                return range
+            }
+            if lspKeys.contains(rangeKey(range)) {
+                return range.withTier(.greenVerified)
+            }
             // Empty LSP response: don't downgrade individual ranges;
             // surfaced as degraded via the top-level warning path instead.
-            if lspKeys.isEmpty { return range }
+            if lspKeys.isEmpty {
+                return range
+            }
             // `.lspDidNotEcho`, not `.sourcekitLspOnly`: this range is from
             // indexstore and LSP failed to echo it. The inverse reason
             // would read backwards to JSON consumers.
@@ -389,8 +395,12 @@ extension RenamePlanner {
             "/Library/Developer/Toolchains/",
             "/.swiftly/toolchains/"
         ]
-        if prefixes.contains(where: path.hasPrefix) { return true }
-        if infixes.contains(where: path.contains) { return true }
+        if prefixes.contains(where: path.hasPrefix) {
+            return true
+        }
+        if infixes.contains(where: path.contains) {
+            return true
+        }
         return false
     }
 }
@@ -536,8 +546,12 @@ struct RenameRange: Codable {
 
     /// Stable ordering for plan output: by path, then line, then column.
     static func locationOrder(_ lhs: RenameRange, _ rhs: RenameRange) -> Bool {
-        if lhs.path != rhs.path { return lhs.path < rhs.path }
-        if lhs.line != rhs.line { return lhs.line < rhs.line }
+        if lhs.path != rhs.path {
+            return lhs.path < rhs.path
+        }
+        if lhs.line != rhs.line {
+            return lhs.line < rhs.line
+        }
         return lhs.column < rhs.column
     }
 
@@ -743,8 +757,12 @@ enum IdentifierValidator {
     /// otherwise a short human-readable reason suitable for the refusal
     /// message.
     static func validate(_ name: String) -> String? {
-        if name.isEmpty { return "empty identifier" }
-        if keywords.contains(name) { return "'\(name)' is a Swift keyword" }
+        if name.isEmpty {
+            return "empty identifier"
+        }
+        if keywords.contains(name) {
+            return "'\(name)' is a Swift keyword"
+        }
 
         guard let first = name.unicodeScalars.first else { return "empty identifier" }
         let letters = CharacterSet.letters

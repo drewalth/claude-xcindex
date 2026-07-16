@@ -568,7 +568,9 @@ private enum FixtureHolder {
     static func shared() throws -> BuiltIndex {
         lock.lock()
         defer { lock.unlock() }
-        if let built = _built { return built }
+        if let built = _built {
+            return built
+        }
         let built = try FixtureBuilder.buildCanaryIndex()
         _built = built
         return built

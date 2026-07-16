@@ -152,7 +152,9 @@ actor LSPClient {
             // Best-effort cleanup; shutdown() never runs for a client we
             // failed to return.
             connection.close()
-            if process.isRunning { process.terminate() }
+            if process.isRunning {
+                process.terminate()
+            }
             xcindexUntrackChildPID(process.processIdentifier)
             throw error
         }
@@ -336,7 +338,9 @@ actor LSPClient {
         while process.isRunning, Date() < deadline {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
-        if process.isRunning { process.terminate() }
+        if process.isRunning {
+            process.terminate()
+        }
 
         // SIGTERM may be ignored by a wedged sourcekit-lsp; give it a
         // brief grace window, then SIGKILL rather than leak the child.

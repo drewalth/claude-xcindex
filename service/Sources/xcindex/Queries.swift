@@ -91,8 +91,12 @@ final class IndexQuerier {
         }
 
         return results.sorted {
-            if $0.path != $1.path { return $0.path < $1.path }
-            if $0.line != $1.line { return $0.line < $1.line }
+            if $0.path != $1.path {
+                return $0.path < $1.path
+            }
+            if $0.line != $1.line {
+                return $0.line < $1.line
+            }
             return $0.column < $1.column
         }
     }
@@ -176,7 +180,9 @@ final class IndexQuerier {
         }
 
         return results.sorted {
-            if $0.path != $1.path { return $0.path < $1.path }
+            if $0.path != $1.path {
+                return $0.path < $1.path
+            }
             return $0.line < $1.line
         }
     }
@@ -222,7 +228,9 @@ final class IndexQuerier {
         }
 
         return results.sorted {
-            if $0.path != $1.path { return $0.path < $1.path }
+            if $0.path != $1.path {
+                return $0.path < $1.path
+            }
             return $0.line < $1.line
         }
     }
@@ -438,24 +446,60 @@ func runCommand(_ path: String, args: [String]) -> String? {
 extension SymbolRole {
     var humanReadable: [String] {
         var names: [String] = []
-        if contains(.definition) { names.append("definition") }
-        if contains(.declaration) { names.append("declaration") }
-        if contains(.reference) { names.append("reference") }
-        if contains(.call) { names.append("call") }
-        if contains(.read) { names.append("read") }
-        if contains(.write) { names.append("write") }
-        if contains(.dynamic) { names.append("dynamic") }
-        if contains(.addressOf) { names.append("addressOf") }
-        if contains(.implicit) { names.append("implicit") }
-        if contains(.overrideOf) { names.append("overrideOf") }
-        if contains(.accessorOf) { names.append("accessorOf") }
-        if contains(.childOf) { names.append("childOf") }
-        if contains(.baseOf) { names.append("baseOf") }
-        if contains(.extendedBy) { names.append("extendedBy") }
-        if contains(.receivedBy) { names.append("receivedBy") }
-        if contains(.calledBy) { names.append("calledBy") }
-        if contains(.containedBy) { names.append("containedBy") }
-        if contains(.specializationOf) { names.append("specializationOf") }
+        if contains(.definition) {
+            names.append("definition")
+        }
+        if contains(.declaration) {
+            names.append("declaration")
+        }
+        if contains(.reference) {
+            names.append("reference")
+        }
+        if contains(.call) {
+            names.append("call")
+        }
+        if contains(.read) {
+            names.append("read")
+        }
+        if contains(.write) {
+            names.append("write")
+        }
+        if contains(.dynamic) {
+            names.append("dynamic")
+        }
+        if contains(.addressOf) {
+            names.append("addressOf")
+        }
+        if contains(.implicit) {
+            names.append("implicit")
+        }
+        if contains(.overrideOf) {
+            names.append("overrideOf")
+        }
+        if contains(.accessorOf) {
+            names.append("accessorOf")
+        }
+        if contains(.childOf) {
+            names.append("childOf")
+        }
+        if contains(.baseOf) {
+            names.append("baseOf")
+        }
+        if contains(.extendedBy) {
+            names.append("extendedBy")
+        }
+        if contains(.receivedBy) {
+            names.append("receivedBy")
+        }
+        if contains(.calledBy) {
+            names.append("calledBy")
+        }
+        if contains(.containedBy) {
+            names.append("containedBy")
+        }
+        if contains(.specializationOf) {
+            names.append("specializationOf")
+        }
         return names.isEmpty ? ["unknown"] : names
     }
 }
