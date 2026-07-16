@@ -82,20 +82,34 @@ fi
 INDEX_STORE="${DATA_STORE}/Index.noindex/DataStore"
 
 # ── Check staleness: count Swift files newer than the DataStore mtime ────────
+#
+# `-newer` makes find do the mtime comparison itself. The comparison used to run
+# in bash, forking a `stat` per candidate file — on a monorepo whose SPM
+# checkouts hold ~35k vendored .swift files that meant ~35k forks and ~80s of
+# blocking on every session start.
+#
+# Vendored trees are pruned rather than filtered: building in Xcode is the action
+# this note asks for, and that would not refresh a dependency checkout, so those
+# files are noise in the count as well as the dominant cost of producing it.
 
-INDEX_MTIME=$(stat -f "%m" "$INDEX_STORE" 2>/dev/null || echo 0)
+STALE_LIST=$(
+    find "$CWD" \
+        \( -name .git -o -name .build -o -name Pods -o -name node_modules \
+           -o -name DerivedData \) -prune -o \
+        -type f -name "*.swift" -newer "$INDEX_STORE" -print 2>/dev/null
+) || true
+
 STALE_COUNT=0
 STALE_FILES=()
 
-while IFS= read -r -d '' f; do
-    FILE_MTIME=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
-    if (( FILE_MTIME > INDEX_MTIME )); then
+while IFS= read -r f; do
+    if [[ -n "$f" ]]; then
         STALE_COUNT=$((STALE_COUNT + 1))
         if (( ${#STALE_FILES[@]} < 5 )); then
-            STALE_FILES+=("$(basename "$f")")
+            STALE_FILES+=("${f##*/}")
         fi
     fi
-done < <(find "$CWD" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
+done <<< "$STALE_LIST"
 
 # ── Emit context ─────────────────────────────────────────────────────────────
 

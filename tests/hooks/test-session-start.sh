@@ -152,4 +152,30 @@ case "$output" in
 esac
 ok 'stale index reports count and truncates the file list with ellipsis'
 
+# ── Case 7: vendored dependency trees must be pruned ─────────────────────────
+# SPM checkouts under .build (and Pods/node_modules) are not the user's code and
+# are not what "build in Xcode" would refresh, so counting them is both noise and
+# — at ~35k files on a real monorepo — the dominant cost of this hook. Only the
+# first-party file may be counted.
+home7="$root/home7"
+p7="$root/case7/Pruned"
+ds7="$home7/Library/Developer/Xcode/DerivedData/Pruned-xyz/Index.noindex/DataStore"
+mkdir -p "$p7/Pruned.xcodeproj/project.xcworkspace" "$ds7"
+mkdir -p "$p7/.build/checkouts/grdb/Sources" "$p7/Pods/Alamofire" "$p7/node_modules/pkg"
+touch -t 200001010000 "$ds7"             # backdate the index so sources count as newer
+: > "$p7/Mine.swift"
+: > "$p7/.build/checkouts/grdb/Sources/Vendored.swift"
+: > "$p7/Pods/Alamofire/Vendored.swift"
+: > "$p7/node_modules/pkg/Vendored.swift"
+run_hook "$p7" "$home7"
+[[ "$status" -eq 0 ]] || fail "case7: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"1 Swift file(s) newer than the index for Pruned"*) ;;
+    *) fail "case7: expected exactly 1 stale file (vendored trees pruned), got: '$output'" ;;
+esac
+case "$output" in
+    *Vendored.swift*) fail "case7: vendored file leaked into the stale list: '$output'" ;;
+esac
+ok 'vendored trees (.build/Pods/node_modules) are pruned from the stale scan'
+
 printf '\nAll %d session-start hook checks passed.\n' "$PASS"
