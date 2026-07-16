@@ -52,9 +52,15 @@ private enum Schema {
             "type": .string("integer"),
             "description": .string(description)
         ]
-        if let min { obj["minimum"] = .int(min) }
-        if let max { obj["maximum"] = .int(max) }
-        if let def = `default` { obj["default"] = .int(def) }
+        if let min {
+            obj["minimum"] = .int(min)
+        }
+        if let max {
+            obj["maximum"] = .int(max)
+        }
+        if let def = `default` {
+            obj["default"] = .int(def)
+        }
         return .object(obj)
     }
 

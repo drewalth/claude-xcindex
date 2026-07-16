@@ -444,7 +444,9 @@ extension RequestProcessor {
             var url = URL(fileURLWithPath: indexStorePath)
             for _ in 0 ..< 10 {
                 url = url.deletingLastPathComponent()
-                if url.path == "/" { break }
+                if url.path == "/" {
+                    break
+                }
                 let pkg = url.appendingPathComponent("Package.swift").path
                 if FileManager.default.fileExists(atPath: pkg) {
                     return url
