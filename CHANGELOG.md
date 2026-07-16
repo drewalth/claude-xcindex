@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   and indentation. No behavior changes.
 
 ### Fixed
+- `hooks/session-start.sh` no longer scans vendored dependency trees
+  (`.build`, `Pods`, `node_modules`, `DerivedData`) when checking for
+  Swift files newer than the index, and no longer forks a `stat`
+  subprocess per candidate file. On a large monorepo with SPM
+  checkouts vendored under `.build`, this cut SessionStart from ~80s
+  to well under a second; the stale-file note now counts only
+  first-party sources.
 - `find_conformances` now returns Swift protocol conformances. Swift's
   IndexStoreDB does not record a direct class→protocol relation — only
   method-level `.overrideOf` relations on each witness — so the query
