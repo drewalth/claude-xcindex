@@ -2,15 +2,16 @@
 
 # xcindex
 
-Semantic Swift/ObjC symbol lookups for Claude Code, powered by Xcode's
-on-disk SourceKit index.
+Semantic Swift/ObjC symbol lookups for Claude Code and Cursor, powered by
+Xcode's on-disk SourceKit index.
 
 [![build](https://github.com/drewalth/claude-xcindex/actions/workflows/build.yml/badge.svg)](https://github.com/drewalth/claude-xcindex/actions/workflows/build.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin-8A63D2)](https://claude.com/claude-code)
 
-A [Claude Code](https://claude.com/claude-code) plugin that lets Claude
-query Xcode's existing symbol index instead of falling back to `grep`.
+A plugin for [Claude Code](https://claude.com/claude-code) and
+[Cursor](https://www.cursor.com) that lets the AI query Xcode's existing
+symbol index instead of falling back to `grep`.
 References, overrides, conformances, and refactor impact analysis on
 Swift/ObjC code hit the same `indexstore-db` library SourceKit-LSP uses —
 USR-authoritative, sub-millisecond warm, no re-indexing.
@@ -27,6 +28,8 @@ when the index is stale rather than acting.
 - An Xcode project (`.xcodeproj` / `.xcworkspace`) built at least once.
 
 ## Install
+
+### Claude Code
 
 ```
 claude plugin marketplace add anthropics/claude-plugins-community
@@ -70,6 +73,31 @@ Then in Claude Code:
 The launcher detects the from-source build at
 `service/.build/release/xcindex` and symlinks it instead of downloading.
 </details>
+
+### Cursor
+
+Requires macOS 14+ and Xcode 16+ — see [Requirements](#requirements). The
+plugin does not run on Windows or Linux (`indexstore-db` is macOS-only).
+
+**From the Cursor marketplace:** search for `xcindex` in the Cursor
+Extensions panel, or visit [cursor.com/marketplace](https://cursor.com/marketplace)
+and search for xcindex. Install with one click; Cursor will invoke `bin/run`
+directly via the bundled `mcp.json`.
+
+**From a local clone:**
+
+```sh
+git clone https://github.com/drewalth/claude-xcindex.git
+cd claude-xcindex/service && swift build -c release
+```
+
+Then point Cursor at the cloned directory: open Cursor settings → MCP →
+add the repo root as an MCP server source. The root `mcp.json` registers
+the server; `bin/run` self-locates the binary without any path placeholder.
+
+After installing, build your project in Xcode at least once so the index
+is populated, then open a Swift file and ask Cursor a symbol question to
+confirm the tools are active.
 
 ## Usage
 
@@ -121,13 +149,20 @@ Exposed under `mcp__xcindex__*`. Signatures and examples in
 
 ## Skills & hooks
 
+The four skills are shared across Claude Code and Cursor:
+
 - **`swift-refactor-plan`** — triggers on "plan a rename / what would changing X involve?". Produces a written refactor plan (sites, risks, recommended execution path) without making any edits.
-- **`swift-find-references`** — triggers on "where is X used?". Steers Claude off grep.
+- **`swift-find-references`** — triggers on "where is X used?". Steers the AI off grep.
 - **`swift-blast-radius`** — triggers on "what does this file affect?". Skips shotgun reads.
 - **`swift-rename-symbol`** — triggers on committed rename requests. Delegates to a subagent so the main context doesn't balloon.
+
+The following are **Claude Code only** (Cursor support deferred):
+
 - **`SessionStart` hook** — reports index freshness up front.
 - **`PostToolUse` hook** (Edit/Write/MultiEdit) — tracks Swift/ObjC edits so stale results are annotated. Never triggers a build.
 - **`PreToolUse` hook** (Grep) — when Claude is about to grep Swift/ObjC source (`*.swift`/`*.m`/`*.mm` glob, `type: swift`, or a Swift file path), injects a one-line reminder that the semantic xcindex tools and skills exist. Non-blocking — the Grep proceeds either way; free-text searches (TODOs, log messages) are unaffected.
+- **`swift-refactor-specialist` subagent** — isolated context for large renames; delegated from the main session.
+- **`/xcindex-setup` and `/xcindex-status` slash commands.**
 
 ## Troubleshooting
 
@@ -155,14 +190,16 @@ fetch the fixtures first: `scripts/fetch-fixture.sh tca` and
 
 ```
 claude-xcindex/
-├── .claude-plugin/plugin.json     # plugin manifest
-├── .mcp.json                      # MCP server registration
-├── bin/run                        # launcher
+├── .claude-plugin/plugin.json     # Claude Code plugin manifest
+├── .mcp.json                      # Claude Code MCP server registration
+├── .cursor-plugin/                # Cursor manifest + marketplace metadata
+├── mcp.json                       # Cursor MCP server registration (root)
+├── bin/run                        # shared launcher (self-locating, no path placeholder)
 ├── service/                       # Swift MCP server
-├── skills/                        # refactor-plan, find-refs, blast-radius, rename
-├── agents/swift-refactor-specialist.md
-├── commands/                      # /xcindex-setup, /xcindex-status
-├── hooks/                         # session-start.sh, post-edit.sh, pre-grep.sh
+├── skills/                        # shared: refactor-plan, find-refs, blast-radius, rename
+├── agents/swift-refactor-specialist.md   # Claude Code only
+├── commands/                      # /xcindex-setup, /xcindex-status (Claude Code only)
+├── hooks/                         # Claude Code only: session-start.sh, post-edit.sh, pre-grep.sh
 ├── scripts/                       # dev-only: build.sh, fixtures, benchmarks
 └── Makefile                       # dev task runner (build, test, lint, format)
 ```

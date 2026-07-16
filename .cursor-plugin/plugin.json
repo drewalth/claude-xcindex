@@ -1,0 +1,30 @@
+{
+  "name": "xcindex",
+  "version": "1.1.0",
+  "description": "Query Xcode's pre-built symbol index from Cursor. Surgical, semantic Swift/ObjC symbol lookups — find references, definitions, overrides, conformances, and blast radius without reading full files.",
+  "author": {
+    "name": "Andrew Althage",
+    "email": "16584198+drewalth@users.noreply.github.com",
+    "url": "https://github.com/drewalth"
+  },
+  "homepage": "https://github.com/drewalth/claude-xcindex",
+  "repository": "https://github.com/drewalth/claude-xcindex.git",
+  "license": "MIT",
+  "keywords": [
+    "swift",
+    "xcode",
+    "ios",
+    "macos",
+    "symbols",
+    "indexstore",
+    "indexstore-db",
+    "sourcekit",
+    "refactoring",
+    "navigation",
+    "mcp",
+    "claude-code",
+    "cursor"
+  ],
+  "logo": "./assets/hero.png",
+  "skills": "./skills"
+}

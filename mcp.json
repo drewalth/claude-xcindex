@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "xcindex": {
+      "command": "./bin/run"
+    }
+  }
+}
