@@ -1,10 +1,16 @@
-# Swift build output
-service/.build/
+# Swift build output — service builds, test-fixture builds, and the root
+# .build/ that SwiftPM tooling (e.g. sourcekit-lsp background indexing)
+# drops in the repo. All transient; anywhere in the tree.
+.build/
 # The test fixture is a SwiftPM package; `swift build` may be run in it
-# during development. Its build artifacts and resolved manifest are
-# generated and should not be committed.
-service/Tests/Fixtures/**/.build/
+# during development. Its resolved manifest is generated and should not
+# be committed.
 service/Tests/Fixtures/**/Package.resolved
+
+# Xcode / SwiftPM per-user state and any in-repo derived data
+# (IDECustomDerivedDataLocation can resolve relative to the project).
+.swiftpm/
+DerivedData/
 
 # semantic-release sentinel (created in CI only)
 .release-version
