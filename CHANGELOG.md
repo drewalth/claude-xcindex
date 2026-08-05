@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-05
+
+### Fixed
+- `swift-refactor-specialist` gains the `status` tool (both install-mode
+  prefixes): without it the dispatched agent could not check index freshness
+  or self-resolve the store, forcing callers to pass resolution inputs in
+  every brief.
+
 ## [1.2.1] - 2026-08-05
 
 ### Fixed

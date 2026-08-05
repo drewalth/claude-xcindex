@@ -4,6 +4,8 @@ description: Focused subagent for Swift/ObjC renames and signature changes using
   the Xcode semantic index. Dispatched by the main session for rename tasks.
   Returns a short summary instead of flooding the main context with file reads.
 tools:
+  - mcp__xcindex__status
+  - mcp__plugin_xcindex_xcindex__status
   - mcp__xcindex__find_symbol
   - mcp__plugin_xcindex_xcindex__find_symbol
   - mcp__xcindex__find_references
@@ -37,6 +39,9 @@ touching only the correct symbol sites and nothing else.
   enumeration — if no index tool resolves, stop and report that back.
 - If the caller's brief provides an `indexStorePath` or `projectPath`, pass it
   on EVERY index tool call.
+- Open with `status` (same resolution inputs) and treat its freshness report as
+  part of your answer — a rename planned against an index older than the code
+  under change is a hypothesis, not evidence.
 
 ## Core workflow: rename OLD → NEW
 
