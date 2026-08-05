@@ -9,7 +9,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build build-debug test test_ci lint format test-hooks
+.PHONY: help build build-debug test test_ci lint format test-hooks test-scripts
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -37,3 +37,6 @@ test-hooks: ## Run the bash hook regression tests
 	bash tests/hooks/test-session-start.sh
 	bash tests/hooks/test-post-edit.sh
 	bash tests/hooks/test-pre-grep.sh
+
+test-scripts: ## Run the bash regression tests for scripts/ used by the release
+	bash tests/scripts/test-set-plugin-version.sh
