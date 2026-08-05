@@ -282,7 +282,9 @@ if [[ ! -d "$index_store" ]]; then
     exit 1
 fi
 
-index_mtime_human=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$index_store" 2>/dev/null || echo "unknown")
+# /usr/bin/stat explicitly: a GNU coreutils `stat` earlier on PATH reads
+# `-f` as --file-system, breaking both the date and the epoch math below.
+index_mtime_human=$(/usr/bin/stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$index_store" 2>/dev/null || echo "unknown")
 pass "Index store: $index_store"
 pass "Last indexed: $index_mtime_human"
 
@@ -290,7 +292,7 @@ pass "Last indexed: $index_mtime_human"
 
 section "Freshness"
 
-index_epoch=$(stat -f "%m" "$index_store" 2>/dev/null || echo 0)
+index_epoch=$(/usr/bin/stat -f "%m" "$index_store" 2>/dev/null || echo 0)
 project_dir=$(dirname "$PROJECT")
 stale=0
 # Pre-flight the traversal so a vanished/denied path fails loudly
@@ -302,7 +304,7 @@ if ! find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/Der
          "Check permissions and retry; freshness results may be incomplete."
 else
     while IFS= read -r -d '' f; do
-        file_epoch=$(stat -f "%m" "$f" 2>/dev/null || echo 0)
+        file_epoch=$(/usr/bin/stat -f "%m" "$f" 2>/dev/null || echo 0)
         (( file_epoch > index_epoch )) && stale=$((stale + 1))
     done < <(find "$project_dir" -name "*.swift" -not -path "*/.git/*" -not -path "*/DerivedData/*" -print0 2>/dev/null)
 
