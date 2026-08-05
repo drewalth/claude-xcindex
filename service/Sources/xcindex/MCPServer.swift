@@ -215,8 +215,10 @@ private enum ToolDefinitions {
         name: "status",
         description:
         "Check the freshness of the Xcode index for a project. " +
-            "Returns the index store path, last-build timestamp, and whether any source files " +
-            "edited this session are newer than the index. " +
+            "Returns the index store path, its last-write timestamp, and any files edited " +
+            "through Claude Code this session. It does NOT compare source mtimes against the " +
+            "index, and the session edit list is cleared at every session start — so an empty " +
+            "list is not evidence of freshness. Judge staleness from the timestamp. " +
             "Call this first if you suspect the index is stale, or at session start when working " +
             "on a large Swift project.",
         inputSchema: Schema.object(

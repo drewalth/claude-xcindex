@@ -133,6 +133,29 @@ case "$output" in
 esac
 ok 'populated index with no newer sources → "Index is current"'
 
+# ── Case 5b: frozen root, fresh nested write → "current" ─────────────────────
+# The regression case, and the one the other fixtures cannot catch: cases 6/7
+# backdate a DataStore with NO subdirectories, so the freshness reference
+# degenerates to the root and old and new code agree. Here the root is frozen at
+# 2000 (as a real store's root is, forever) while v5/units carries the actual
+# last write, with a source file dated in between. Reading the root alone counts
+# that source as newer and cries stale on a current index — which is exactly what
+# shipped. Expect "Index is current".
+home5b="$root/home5b"
+p5b="$root/case5b/Frozen"
+ds5b="$home5b/Library/Developer/Xcode/DerivedData/Frozen-abc/Index.noindex/DataStore"
+mkdir -p "$p5b/Frozen.xcodeproj/project.xcworkspace" "$ds5b/v5/units"
+: > "$p5b/Mine.swift"
+touch -t 201001010000 "$p5b/Mine.swift"   # newer than the root, older than units
+touch -t 200001010000 "$ds5b"             # frozen root, stamped AFTER mkdir bumped it
+run_hook "$p5b" "$home5b"
+[[ "$status" -eq 0 ]] || fail "case5b: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"Index is current for Frozen"*) ;;
+    *) fail "case5b: root-mtime regression — expected 'Index is current for Frozen', got: '$output'" ;;
+esac
+ok 'frozen store root with a fresh nested write reads as current, not stale'
+
 # ── Case 6: stale index → count + ellipsis truncation (>5 files) ─────────────
 home6="$root/home6"
 p6="$root/case6/Stale"

@@ -323,8 +323,14 @@ extension IndexQuerier {
     /// writes unit and record files into `v5/units` and `v5/records`, which bumps
     /// *those* directories; the root is touched only when the store is created.
     /// Reading the root alone therefore under-reports freshness indefinitely —
-    /// measured on a live store: root `2026-08-02`, `v5` `2026-08-05`, three days
-    /// of index writes invisible, on a store that had been rebuilt minutes before.
+    /// measured on a live store, the root read three days behind `v5` on an index
+    /// that had been rebuilt minutes earlier. The error is unbounded: it grows for
+    /// the whole life of the store.
+    ///
+    /// The residual exposure runs the other way. Any non-indexer directory touch
+    /// inside the store — a stray `.DS_Store`, backup tooling — makes the index
+    /// look fresher than it is. Low probability, and this is a hint surface, but
+    /// it is the direction that vouches for bad data rather than over-warning.
     ///
     /// Directories are sufficient and are what keeps this cheap: creating or
     /// removing a file bumps its containing directory, so the newest directory

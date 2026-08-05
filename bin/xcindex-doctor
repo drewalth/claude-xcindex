@@ -286,9 +286,23 @@ if [[ ! -d "$index_store" ]]; then
     exit 1
 fi
 
+# The DataStore root's mtime is stamped when the store is created and never
+# updated: the indexer writes unit and record files into v5/units and
+# v5/records, bumping *those* directories. Reading the root reports the store's
+# birthday as its last build, so the freshness check below failed on every
+# active repo forever. Use the newest directory in the tree as the reference —
+# `-nt` is a bash mtime comparison, so this costs no fork and is neutral
+# between the GNU and BSD `stat` flavours. Same reference as
+# hooks/session-start.sh, deliberately: the two must never disagree.
+fresh_ref="$index_store"
+while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    [[ "$d" -nt "$fresh_ref" ]] && fresh_ref="$d"
+done < <(find "$index_store" -type d 2>/dev/null)
+
 # /usr/bin/stat explicitly: a GNU coreutils `stat` earlier on PATH reads
 # `-f` as --file-system, breaking both the date and the epoch math below.
-index_mtime_human=$(/usr/bin/stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$index_store" 2>/dev/null || echo "unknown")
+index_mtime_human=$(/usr/bin/stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$fresh_ref" 2>/dev/null || echo "unknown")
 pass "Index store: $index_store"
 pass "Last indexed: $index_mtime_human"
 
@@ -296,7 +310,7 @@ pass "Last indexed: $index_mtime_human"
 
 section "Freshness"
 
-index_epoch=$(/usr/bin/stat -f "%m" "$index_store" 2>/dev/null || echo 0)
+index_epoch=$(/usr/bin/stat -f "%m" "$fresh_ref" 2>/dev/null || echo 0)
 project_dir=$(dirname "$PROJECT")
 stale=0
 # Pre-flight the traversal so a vanished/denied path fails loudly
