@@ -295,11 +295,9 @@ final class IndexQuerier {
 
     /// Return freshness info about the index store.
     func status(storePath: String) -> StatusResult {
-        let fm = FileManager.default
         var indexMtime: String?
 
-        if let attrs = try? fm.attributesOfItem(atPath: storePath),
-           let mtime = attrs[.modificationDate] as? Date {
+        if let mtime = Self.newestDirectoryWrite(inTreeAt: storePath) {
             let formatter = ISO8601DateFormatter()
             indexMtime = formatter.string(from: mtime)
         }
@@ -313,6 +311,64 @@ final class IndexQuerier {
                 ? "Index store not found at \(storePath)."
                 : "Index store found at \(storePath) (last modified \(indexMtime!))."
         )
+    }
+}
+
+// MARK: - Index freshness
+
+extension IndexQuerier {
+    /// Newest modification time in a directory tree, considering directories only.
+    ///
+    /// The DataStore root's own mtime does NOT track index writes. The indexer
+    /// writes unit and record files into `v5/units` and `v5/records`, which bumps
+    /// *those* directories; the root is touched only when the store is created.
+    /// Reading the root alone therefore under-reports freshness indefinitely —
+    /// measured on a live store: root `2026-08-02`, `v5` `2026-08-05`, three days
+    /// of index writes invisible, on a store that had been rebuilt minutes before.
+    ///
+    /// Directories are sufficient and are what keeps this cheap: creating or
+    /// removing a file bumps its containing directory, so the newest directory
+    /// mtime tracks the newest write without stat-ing every unit file (measured
+    /// on that same store: 1,194 directories against 3,872 files, and zero files
+    /// newer than the newest directory).
+    ///
+    /// A unit file rewritten in place, without a create or a rename, would not
+    /// bump its parent. That direction fails safe — the store reads *older* than
+    /// it is, so callers warn "stale" on a fresh index rather than vouching for a
+    /// stale one.
+    static func newestDirectoryWrite(inTreeAt root: String) -> Date? {
+        let fm = FileManager.default
+        let rootURL = URL(fileURLWithPath: root)
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
+
+        // A missing root is the "index store not found" case, not a zero date.
+        guard let rootDate = (try? rootURL.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        else { return nil }
+
+        var newest = rootDate
+        var pending = [rootURL]
+
+        while let directory = pending.popLast() {
+            guard let entries = try? fm.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: Array(keys),
+                options: []
+            ) else { continue }
+
+            for entry in entries {
+                guard let values = try? entry.resourceValues(forKeys: keys),
+                      values.isDirectory == true
+                else { continue }
+
+                if let modified = values.contentModificationDate, modified > newest {
+                    newest = modified
+                }
+                pending.append(entry)
+            }
+        }
+
+        return newest
     }
 }
 

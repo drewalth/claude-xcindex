@@ -124,7 +124,7 @@ fi
 
 INDEX_STORE="${DATA_STORE}/Index.noindex/DataStore"
 
-# ── Check staleness: count Swift files newer than the DataStore mtime ────────
+# ── Check staleness: count Swift files newer than the index's newest write ───
 #
 # `-newer` makes find do the mtime comparison itself. The comparison used to run
 # in bash, forking a `stat` per candidate file — on a monorepo whose SPM
@@ -134,12 +134,29 @@ INDEX_STORE="${DATA_STORE}/Index.noindex/DataStore"
 # Vendored trees are pruned rather than filtered: building in Xcode is the action
 # this note asks for, and that would not refresh a dependency checkout, so those
 # files are noise in the count as well as the dominant cost of producing it.
+#
+# The reference is NOT the DataStore root. The root's mtime is set when the store
+# is created and never again — the indexer writes into v5/units and v5/records,
+# bumping those directories only. Comparing against the root therefore counts
+# every source file touched since the store was first created, which on an active
+# repo is a permanent false "stale" alarm (measured: 111 files reported newer than
+# an index that had in fact been rebuilt minutes earlier). Walk for the newest
+# directory instead and use that as the reference.
+#
+# `-nt` is a bash mtime comparison, so this needs no `stat` and stays neutral
+# between the GNU and BSD flavours the two agent surfaces resolve.
+
+FRESH_REF="$INDEX_STORE"
+while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    [[ "$d" -nt "$FRESH_REF" ]] && FRESH_REF="$d"
+done < <(find "$INDEX_STORE" -type d 2>/dev/null)
 
 STALE_LIST=$(
     find "$CWD" \
         \( -name .git -o -name .build -o -name Pods -o -name node_modules \
            -o -name DerivedData \) -prune -o \
-        -type f -name "*.swift" -newer "$INDEX_STORE" -print 2>/dev/null
+        -type f -name "*.swift" -newer "$FRESH_REF" -print 2>/dev/null
 ) || true
 
 STALE_COUNT=0
@@ -156,9 +173,14 @@ done <<< "$STALE_LIST"
 
 # ── Emit context ─────────────────────────────────────────────────────────────
 
+# Report the same reference the staleness comparison used, not the DataStore
+# root — the root's mtime is frozen at creation, so displaying it next to
+# "Index is current" printed a contradiction: a store rebuilt minutes ago
+# announcing itself as days old.
+#
 # /usr/bin/stat explicitly: a GNU coreutils `stat` earlier on PATH reads
 # `-f` as --file-system and prints filesystem stats instead of the date.
-INDEX_DATE=$(/usr/bin/stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$INDEX_STORE" 2>/dev/null || echo "unknown")
+INDEX_DATE=$(/usr/bin/stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$FRESH_REF" 2>/dev/null || echo "unknown")
 
 if (( STALE_COUNT == 0 )); then
     echo "[xcindex] Index is current for ${PROJECT_NAME} (last built ${INDEX_DATE})." \

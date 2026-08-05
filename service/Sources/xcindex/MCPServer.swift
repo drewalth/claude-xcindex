@@ -563,7 +563,16 @@ extension Dispatcher {
             for file in editedFiles { lines.append("  \(file)") }
             lines.append("\n⚠️  These files were edited after the index was built. Consider rebuilding in Xcode for accurate results.")
         } else {
-            lines.append("\nNo source files edited this session — index should be current.")
+            // Never vouch for the index here. This list tracks edits made through
+            // Claude Code in THIS session, and hooks/session-start.sh truncates it
+            // at every session start — so a cold session reports none no matter how
+            // stale the store is. "Last updated:" above is the only freshness
+            // signal in this output; leave the comparison to the caller.
+            lines.append(
+                "\nNo files edited this session — but that tracks Claude Code edits only, "
+                    + "and a cold session always reports none. It is not a freshness check: "
+                    + "compare `Last updated:` above against your last Xcode build."
+            )
         }
 
         return .init(content: [text(lines.joined(separator: "\n"))])

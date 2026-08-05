@@ -10,6 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Index freshness is read from the newest directory in the DataStore tree
+  instead of the store root's own mtime. The root is stamped when the store
+  is created and never again — the indexer writes into `v5/units` and
+  `v5/records`, bumping those — so both freshness signals were wrong for the
+  life of the store. `hooks/session-start.sh` counted every source file
+  touched since creation as "newer than the index", a standing false stale
+  alarm (measured: 111 files reported against an index rebuilt minutes
+  earlier), and `xcindex_status` reported a `Last updated:` days behind the
+  real one. Same store, after the fix: "Index is current … (last built
+  2026-08-05 07:21)" in place of "111 Swift file(s) newer … (last built
+  2026-08-02 10:29)".
+- `xcindex_status` no longer claims "index should be current" when no files
+  were edited this session. That list only ever tracked Claude Code edits,
+  and `hooks/session-start.sh` truncates it at every session start, so a cold
+  session always reported none regardless of the store's real age — the
+  reassurance was unconditional. It now says what the list does and points at
+  `Last updated:` for the actual comparison.
+
 ## [1.2.3] - 2026-08-05
 
 ### Fixed
