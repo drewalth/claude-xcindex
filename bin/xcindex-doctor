@@ -212,15 +212,62 @@ pass "Project: $PROJECT"
 section "Index store"
 
 project_name=$(basename "$PROJECT" | sed 's/\.[^.]*$//')
-dd_base="$HOME/Library/Developer/Xcode/DerivedData"
+dd_default_base="$HOME/Library/Developer/Xcode/DerivedData"
 custom=$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation 2>/dev/null || true)
-[[ -n "$custom" ]] && dd_base="$custom"
+dd_custom_base=""
+if [[ -n "$custom" ]]; then
+    if [[ "$custom" = /* ]]; then
+        dd_custom_base="$custom"
+    else
+        # Relative custom locations resolve against the project's directory.
+        dd_custom_base="$(dirname "$PROJECT")/$custom"
+    fi
+fi
 
-dd_dir=$(ls -dt "${dd_base}/${project_name}-"* 2>/dev/null | head -1)
+dd_candidates=$(
+    ls -dt \
+        ${dd_custom_base:+"${dd_custom_base}/${project_name}" "${dd_custom_base}/${project_name}-"*} \
+        "${dd_default_base}/${project_name}" "${dd_default_base}/${project_name}-"* \
+        2>/dev/null
+) || true
+
+dd_dir=""
+dd_fallback=""
+dd_mismatched=()
+
+while IFS= read -r c; do
+    [[ -z "$c" ]] && continue
+    [[ -d "$c/Index.noindex/DataStore" ]] || continue
+
+    ws=$(plutil -extract WorkspacePath raw -o - "$c/info.plist" 2>/dev/null || true)
+
+    if [[ -z "$ws" ]]; then
+        [[ -z "$dd_fallback" ]] && dd_fallback="$c"
+        continue
+    fi
+
+    ws_stripped="${ws%/project.xcworkspace}"
+
+    if [[ "$ws_stripped" == "$PROJECT" || "$ws" == "$PROJECT" ]]; then
+        dd_dir="$c"
+        break
+    fi
+
+    dd_mismatched+=("$c ($ws)")
+done <<< "$dd_candidates"
 
 if [[ -z "$dd_dir" ]]; then
-    fail "No DerivedData folder for '$project_name' under $dd_base." \
-         "Open the project in Xcode and build it at least once (Cmd+B)."
+    dd_dir="$dd_fallback"
+fi
+
+if [[ -z "$dd_dir" ]]; then
+    if (( ${#dd_mismatched[@]} > 0 )); then
+        fail "No DerivedData container for '$project_name' matches workspace '$PROJECT'." \
+             "Mismatched candidate(s): ${dd_mismatched[*]}."
+    else
+        fail "No DerivedData folder for '$project_name' under $dd_default_base${dd_custom_base:+ or $dd_custom_base}." \
+             "Open the project in Xcode and build it at least once (Cmd+B)."
+    fi
     echo
     echo "Some checks failed; see above."
     exit 1

@@ -85,6 +85,7 @@ The skills trigger automatically based on what you ask — no special syntax.
 ```
 You: Find all callers of fetchUser.
 Claude: [mcp__xcindex__find_symbol → mcp__xcindex__find_references]
+        (or mcp__plugin_xcindex_xcindex__* under a plugin install)
         → 6 call sites across 4 files. Reads ±10 lines around each.
         Returns a focused summary instead of 8 full-file reads.
 ```
@@ -105,7 +106,9 @@ edited since the last build.
 
 ## MCP tools
 
-Exposed under `mcp__xcindex__*`. Signatures and examples in
+Exposed under `mcp__xcindex__*` (project-level `.mcp.json` install) or
+`mcp__plugin_xcindex_xcindex__*` (plugin/marketplace install — pattern
+`mcp__plugin_<plugin>_<server>__`). Signatures and examples in
 [docs/tools-reference.md](docs/tools-reference.md).
 
 | Tool | Purpose |

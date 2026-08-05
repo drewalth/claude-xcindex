@@ -7,6 +7,7 @@ allowed-tools:
   - Read
   - AskUserQuestion
   - mcp__xcindex__status
+  - mcp__plugin_xcindex_xcindex__status
 ---
 
 Run the xcindex setup sequence for the current working directory. Walk
@@ -83,8 +84,9 @@ unless the user explicitly asks for them.
 
 ## 5. Smoke test
 
-Call the `status` tool from the xcindex MCP server (`mcp__xcindex__status`)
-with the resolved project path. Confirm it returns a sensible
+Call the `status` tool from the xcindex MCP server (`mcp__xcindex__status`,
+or `mcp__plugin_xcindex_xcindex__status` under a plugin install) with the
+resolved project path. Confirm it returns a sensible
 `indexStorePath` and a recent `indexMtime`.
 
 If status succeeds, print a summary:
@@ -94,6 +96,7 @@ If status succeeds, print a summary:
    Index: <path>
    Last built: <mtime>
    Tools available: mcp__xcindex__find_symbol, mcp__xcindex__find_references, etc.
+   (or the mcp__plugin_xcindex_xcindex__* siblings under a plugin install)
 ```
 
 If status fails, report the error and suggest next steps — most often

@@ -1,6 +1,8 @@
 # Tools reference
 
-Every tool lives under the `mcp__xcindex__*` MCP namespace. You won't
+Every tool lives under the `mcp__xcindex__*` MCP namespace for a
+project-level `.mcp.json` install, or `mcp__plugin_xcindex_xcindex__*` for a
+plugin/marketplace install. You won't
 usually call them by name — the plugin's skills trigger them from
 natural-language questions — but this page documents the surface for
 anyone building automations, writing their own skills, or debugging.

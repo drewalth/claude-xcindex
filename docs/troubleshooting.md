@@ -44,7 +44,8 @@ index is still authoritative.
 
 1. Run `/plugin` — `xcindex` should be listed. If it isn't,
    install it: `/plugin install drewalth/claude-xcindex`.
-2. If it's listed but the `mcp__xcindex__*` tools are missing, the
+2. If it's listed but neither the `mcp__xcindex__*` (project install) nor
+   `mcp__plugin_xcindex_xcindex__*` (plugin install) tools are present, the
    launcher couldn't resolve the Swift binary. Check:
    - `bin/xcindex` exists and is executable, **or**
    - `service/.build/release/xcindex` exists (from-source build), **or**

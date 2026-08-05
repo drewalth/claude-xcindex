@@ -59,19 +59,62 @@ PROJECT_NAME=$(basename "$PROJECT" | sed 's/\.[^.]*$//')
 
 # ── Locate the DerivedData folder ────────────────────────────────────────────
 
-DERIVED_DATA_BASE="$HOME/Library/Developer/Xcode/DerivedData"
+DEFAULT_BASE="$HOME/Library/Developer/Xcode/DerivedData"
 
-# Honor a custom DerivedData location set in Xcode preferences.
+# Honor a custom DerivedData location set in Xcode preferences. It may be
+# relative — Xcode resolves it against the project/workspace's directory.
 CUSTOM_PATH=$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation 2>/dev/null || true)
+CUSTOM_BASE=""
 if [[ -n "$CUSTOM_PATH" ]]; then
-    DERIVED_DATA_BASE="$CUSTOM_PATH"
+    if [[ "$CUSTOM_PATH" = /* ]]; then
+        CUSTOM_BASE="$CUSTOM_PATH"
+    else
+        # Relative custom locations resolve against the project's directory.
+        CUSTOM_BASE="$(dirname "$PROJECT")/$CUSTOM_PATH"
+    fi
 fi
 
-DATA_STORE=$(
-    ls -dt "${DERIVED_DATA_BASE}/${PROJECT_NAME}-"* 2>/dev/null \
-    | head -1
+# Candidates: unhashed "<name>" (relative custom locations) and hashed
+# "<name>-*" (default/absolute custom locations), across the custom base (if
+# any) and the default base, newest first.
+CANDIDATES=$(
+    ls -dt \
+        ${CUSTOM_BASE:+"${CUSTOM_BASE}/${PROJECT_NAME}" "${CUSTOM_BASE}/${PROJECT_NAME}-"*} \
+        "${DEFAULT_BASE}/${PROJECT_NAME}" "${DEFAULT_BASE}/${PROJECT_NAME}-"* \
+        2>/dev/null
 ) || true   # no match → ls exits non-zero; without this, set -e/pipefail
             # aborts before the "no index" guard below can print + exit 0
+
+DATA_STORE=""
+FALLBACK_STORE=""
+
+while IFS= read -r c; do
+    [[ -z "$c" ]] && continue
+    [[ -d "$c/Index.noindex/DataStore" ]] || continue
+
+    ws=$(plutil -extract WorkspacePath raw -o - "$c/info.plist" 2>/dev/null || true)
+
+    if [[ -z "$ws" ]]; then
+        if [[ -z "$FALLBACK_STORE" ]]; then
+            FALLBACK_STORE="$c"
+        fi
+        continue
+    fi
+
+    # Bare-.xcodeproj builds record the bundle-internal workspace; strip it
+    # before comparing against the project bundle path.
+    ws_stripped="${ws%/project.xcworkspace}"
+
+    if [[ "$ws_stripped" == "$PROJECT" || "$ws" == "$PROJECT" ]]; then
+        DATA_STORE="$c"
+        break
+    fi
+    # Mismatched provenance — skip entirely, never fall back to it.
+done <<< "$CANDIDATES"
+
+if [[ -z "$DATA_STORE" ]]; then
+    DATA_STORE="$FALLBACK_STORE"
+fi
 
 if [[ -z "$DATA_STORE" || ! -d "$DATA_STORE/Index.noindex/DataStore" ]]; then
     echo "[xcindex] No Xcode index found for ${PROJECT_NAME}." \

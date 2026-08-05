@@ -14,22 +14,33 @@ BIN_DIR="${PLUGIN_ROOT}/bin"
 BINARY="${BIN_DIR}/xcindex"
 
 ensure_binary() {
+    # Explicit override wins outright.
+    if [[ -n "${XCINDEX_BINARY:-}" && -x "${XCINDEX_BINARY}" ]]; then
+        BINARY="${XCINDEX_BINARY}"
+        return 0
+    fi
+
     # Already cached.
     [[ -x "$BINARY" ]] && return 0
 
     # Contributor path: a from-source build lives in service/.build/release.
+    # Prefer this over the release download below — it's the supply-chain-
+    # clean path (no third-party binary fetch) and always reflects this
+    # fork's fixes. Build it with `make build`.
     local source_build="${PLUGIN_ROOT}/service/.build/release/xcindex"
     if [[ -x "$source_build" ]]; then
         ln -sf "$source_build" "$BINARY"
         return 0
     fi
 
-    # Otherwise, download the asset from the latest GitHub release. The
-    # /releases/latest/download/ URL is stable and always redirects to
-    # whatever the most recent published release has as an asset — so
-    # bin/run doesn't need to parse plugin.json or stay in lockstep with
-    # any particular version tag.
-    local url="https://github.com/drewalth/claude-xcindex/releases/latest/download/xcindex"
+    # Fallback: download the asset from the latest GitHub release of this
+    # fork. The /releases/latest/download/ URL is stable and always
+    # redirects to whatever the most recent published release has as an
+    # asset — so bin/run doesn't need to parse plugin.json or stay in
+    # lockstep with any particular version tag. This must point at the
+    # fork's own releases, not upstream's — downloading upstream's binary
+    # would silently undo this fork's fixes.
+    local url="https://github.com/mrinaldhillon/claude-xcindex/releases/latest/download/xcindex"
     local tmp="${BIN_DIR}/xcindex.download.$$"
 
     mkdir -p "$BIN_DIR"

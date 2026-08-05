@@ -97,11 +97,18 @@ Hooks **warn, never act** — no automatic builds. This is deliberate.
 
 ### DerivedData resolution
 
-`DerivedDataLocator` (Swift) handles: explicit `indexStorePath`, custom
-`IDECustomDerivedDataLocation` from Xcode defaults, or scanning
-`~/Library/Developer/Xcode/DerivedData/` for `<ProjectName>-*` and picking the
-most recently modified. `hooks/session-start.sh` mirrors the same logic in
-bash so the hook can warn before any MCP call.
+`DerivedDataLocator` (Swift) resolves in this order: an explicit
+`indexStorePath` wins outright; otherwise it checks for a custom
+`IDECustomDerivedDataLocation` from Xcode defaults (absolute, or relative
+resolved against the project's own directory) plus the default
+`~/Library/Developer/Xcode/DerivedData/` root, and matches both
+`<ProjectName>` and `<ProjectName>-*` containers under whichever root(s)
+apply. Each candidate container is verified against its `info.plist`
+`WorkspacePath` — provenance beats mtime, so a container whose
+`WorkspacePath` doesn't match the project is refused even if it's the most
+recently modified; a mismatch-only candidate set yields no match rather than
+a wrong one. `hooks/session-start.sh` and `bin/xcindex-doctor` mirror the
+same logic in bash so they can warn or diagnose before any MCP call.
 
 ## Plugin packaging
 
@@ -120,7 +127,9 @@ bash so the hook can warn before any MCP call.
 ## Conventions
 
 - Tools are exposed under the `mcp__xcindex__*` namespace (auto-prefixed by
-  Claude Code from the server key in `.mcp.json`).
+  Claude Code from the server key in `.mcp.json`) for a project-level
+  install, or `mcp__plugin_xcindex_xcindex__*` (pattern
+  `mcp__plugin_<plugin>_<server>__`) for a plugin/marketplace install.
 - Always do `find_symbol` → get USR → `find_references`/`find_definition`/
   `find_overrides`/`find_conformances`. Name-based lookups are for
   disambiguation; USR-based lookups are the authoritative ones.

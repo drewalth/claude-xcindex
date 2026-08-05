@@ -3,6 +3,7 @@ name: status
 description: Check Xcode index freshness for the current project.
 allowed-tools:
   - mcp__xcindex__status
+  - mcp__plugin_xcindex_xcindex__status
   - Bash
   - Glob
 ---

@@ -178,4 +178,78 @@ case "$output" in
 esac
 ok 'vendored trees (.build/Pods/node_modules) are pruned from the stale scan'
 
+# ── Case 8: relative custom DerivedData location + unhashed container ────────
+# IDECustomDerivedDataLocation can be relative ("DerivedData"), resolved by
+# Xcode against the project/workspace's directory, and the resulting
+# container is named exactly "<ProjectName>" (no hash suffix).
+SHIM8="$root/shim8"
+mkdir -p "$SHIM8"
+cat > "$SHIM8/defaults" <<'EOF'
+#!/usr/bin/env bash
+echo "DerivedData"
+exit 0
+EOF
+chmod +x "$SHIM8/defaults"
+
+p8="$root/case8/Handled"
+mkdir -p "$p8/Handled.xcworkspace"
+ds8="$p8/DerivedData/Handled/Index.noindex/DataStore"
+mkdir -p "$ds8"
+cat > "$p8/DerivedData/Handled/info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>WorkspacePath</key><string>${p8}/Handled.xcworkspace</string></dict></plist>
+EOF
+run_hook "$p8" "$root/home8" "$SHIM8:$SHIM:$PATH"
+[[ "$status" -eq 0 ]] || fail "case8: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"Index is current for Handled"*) ;;
+    *) fail "case8: expected 'Index is current for Handled', got: '$output'" ;;
+esac
+ok 'relative custom DerivedData location resolves to the unhashed container'
+
+# ── Case 9: WorkspacePath provenance beats newest-mtime ──────────────────────
+# A newer, wrong-provenance container in the default base must not shadow the
+# correct (but older-mtime) container found via the relative custom location.
+SHIM9="$SHIM8"
+
+p9="$root/case9/Prov"
+mkdir -p "$p9/Prov.xcworkspace"
+home9="$root/home9"
+
+# Right container: relative custom base, correct WorkspacePath, FRESH DataStore.
+ds9_right="$p9/DerivedData/Prov/Index.noindex/DataStore"
+mkdir -p "$ds9_right"
+cat > "$p9/DerivedData/Prov/info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>WorkspacePath</key><string>${p9}/Prov.xcworkspace</string></dict></plist>
+EOF
+
+# Wrong container: default base, mismatching WorkspacePath, BACKDATED DataStore,
+# but a NEWER directory mtime than the right container so a pure-mtime pick
+# would choose it in error.
+ds9_wrong_dir="$home9/Library/Developer/Xcode/DerivedData/Prov-otherhash"
+ds9_wrong="$ds9_wrong_dir/Index.noindex/DataStore"
+mkdir -p "$ds9_wrong"
+cat > "$ds9_wrong_dir/info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>WorkspacePath</key><string>/some/other/Other.xcworkspace</string></dict></plist>
+EOF
+touch -t 200001010000 "$ds9_wrong"
+touch "$ds9_wrong_dir"   # newer directory mtime than the right container
+
+# A source file newer than the wrong (backdated) store but older than the
+# right (fresh) store — proves the correct container was actually used.
+touch -t 201001010000 "$p9/F.swift"
+
+run_hook "$p9" "$home9" "$SHIM9:$SHIM:$PATH"
+[[ "$status" -eq 0 ]] || fail "case9: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"Index is current for Prov"*) ;;
+    *) fail "case9: expected 'Index is current for Prov' (provenance must beat mtime), got: '$output'" ;;
+esac
+ok 'WorkspacePath provenance selects the correct container over a newer-mtime mismatch'
+
 printf '\nAll %d session-start hook checks passed.\n' "$PASS"
