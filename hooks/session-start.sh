@@ -156,7 +156,9 @@ done <<< "$STALE_LIST"
 
 # ── Emit context ─────────────────────────────────────────────────────────────
 
-INDEX_DATE=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$INDEX_STORE" 2>/dev/null || echo "unknown")
+# /usr/bin/stat explicitly: a GNU coreutils `stat` earlier on PATH reads
+# `-f` as --file-system and prints filesystem stats instead of the date.
+INDEX_DATE=$(/usr/bin/stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$INDEX_STORE" 2>/dev/null || echo "unknown")
 
 if (( STALE_COUNT == 0 )); then
     echo "[xcindex] Index is current for ${PROJECT_NAME} (last built ${INDEX_DATE})." \

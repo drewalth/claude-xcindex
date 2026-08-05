@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-05
+
+### Fixed
+- `hooks/session-start.sh` and `bin/xcindex-doctor` call `/usr/bin/stat`
+  explicitly: a GNU coreutils `stat` earlier on PATH reads `-f` as
+  `--file-system` and corrupts both the human-readable index date and
+  the doctor's freshness epoch math.
+
 ### Added
 - `CHANGELOG.md`, `SECURITY.md`, and GitHub issue/PR templates for a
   healthier contributor experience.
