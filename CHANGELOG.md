@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-05
+
+### Fixed
+- `bin/xcindex-doctor` project auto-discovery no longer picks the
+  auto-generated `project.xcworkspace` nested inside a `*.xcodeproj`
+  bundle over a real root workspace (the exclusion
+  `hooks/session-start.sh` already applied). The embedded pick made
+  `project_name` resolve to `project`, so the DerivedData container
+  lookup could never match and the doctor reported a missing index
+  store despite a fresh one.
+
 ## [1.2.2] - 2026-08-05
 
 ### Fixed

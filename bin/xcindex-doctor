@@ -186,10 +186,14 @@ fi
 section "Xcode project"
 
 if [[ -z "$PROJECT" ]]; then
-    # Scan CWD and one level up, prefer .xcworkspace.
+    # Scan CWD and one level up, prefer .xcworkspace. Exclude the
+    # auto-generated workspace nested inside a *.xcodeproj (same rule as
+    # hooks/session-start.sh): find emits it in traversal order, so it can
+    # shadow a real root workspace that sorts later — and its basename
+    # ("project") then poisons the DerivedData container lookup below.
     for d in "$(pwd)" "$(dirname "$(pwd)")"; do
         for ext in xcworkspace xcodeproj; do
-            found=$(find "$d" -maxdepth 2 -name "*.$ext" ! -path "*/Pods/*" ! -path "*/.git/*" 2>/dev/null | head -1)
+            found=$(find "$d" -maxdepth 2 -name "*.$ext" ! -path "*/Pods/*" ! -path "*/.git/*" ! -path "*.xcodeproj/*" 2>/dev/null | head -1)
             if [[ -n "$found" ]]; then
                 PROJECT="$found"
                 break 2
