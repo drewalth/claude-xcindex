@@ -64,7 +64,7 @@ Then in Claude Code:
 
 ```
 /plugin marketplace add /absolute/path/to/claude-xcindex
-/plugin install xcindex@xcindex-local
+/plugin install xcindex@mrinal-xcindex
 ```
 
 The launcher detects the from-source build at
