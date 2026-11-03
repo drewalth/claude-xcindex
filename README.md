@@ -23,6 +23,7 @@ when the index is stale rather than acting.
 
 - macOS 14 (Sonoma) or later — `indexstore-db` requires macOS 14+.
 - Xcode 16 or later with command-line tools (`xcode-select --install`).
+  Building the server from source needs Xcode 27 (Swift 6.4).
 - [Claude Code](https://claude.com/claude-code).
 - An Xcode project (`.xcodeproj` / `.xcworkspace`) built at least once.
 

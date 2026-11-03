@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import xcindex
 
@@ -15,19 +16,21 @@ struct RunCommandTests {
     func largeOutputDoesNotDeadlock(redirect: String) {
         let size = 256 * 1024
         let done = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var result: String?
+        let result = OSAllocatedUnfairLock<String?>(initialState: nil)
         Thread {
-            result = runCommand("/bin/sh", args: ["-c", "head -c \(size) /dev/zero | tr '\\0' x \(redirect)"])
+            let output = runCommand("/bin/sh", args: ["-c", "head -c \(size) /dev/zero | tr '\\0' x \(redirect)"])
+            result.withLock { $0 = output }
             done.signal()
         }.start()
         guard done.wait(timeout: .now() + 60) == .success else {
             Issue.record("runCommand hung on \(size) bytes (redirect \(redirect))")
             return
         }
+        let output = result.withLock { $0 }
         if redirect.isEmpty {
-            #expect(result?.count == size)
+            #expect(output?.count == size)
         } else {
-            #expect(result == "")
+            #expect(output == "")
         }
     }
 }

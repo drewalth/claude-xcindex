@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // Long sequential build routines drive real SwiftPM builds; relax for this helper.
 // swiftlint:disable function_body_length
@@ -294,20 +295,15 @@ struct BuiltIndex {
 /// Thread-safe Data accumulator used by the pipe-draining handlers.
 /// Pipe readability callbacks fire on an arbitrary Dispatch queue, so
 /// a plain `var data = Data()` is a data race waiting to happen.
-private final class DrainingBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data = Data()
+private final class DrainingBuffer: Sendable {
+    private let data = OSAllocatedUnfairLock(initialState: Data())
 
     func append(_ chunk: Data) {
-        lock.lock()
-        data.append(chunk)
-        lock.unlock()
+        data.withLock { $0.append(chunk) }
     }
 
     func string() -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        return String(data: data, encoding: .utf8) ?? ""
+        data.withLock { String(data: $0, encoding: .utf8) ?? "" }
     }
 }
 
