@@ -33,6 +33,15 @@ atexit {
     xcindexTerminateTrackedChildren()
 }
 
+// Same project resolution as Freshness.stateFilePath. Runs concurrently with
+// the MCP handshake; a no-op outside an indexed Xcode project.
+Task {
+    let env = ProcessInfo.processInfo.environment
+    await processor.warmUp(
+        projectPath: env["CLAUDE_PROJECT_DIR"] ?? FileManager.default.currentDirectoryPath
+    )
+}
+
 let transport = StdioTransport()
 try await server.start(transport: transport)
 await server.waitUntilCompleted()
