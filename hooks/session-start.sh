@@ -34,15 +34,19 @@ STATE_FILE="${TMP}/xcindex-edited-${HASH}.txt"
 # ── Find the nearest .xcodeproj or .xcworkspace ──────────────────────────────
 
 find_project() {
-    # CWD and one level up, preferring .xcworkspace over .xcodeproj.
+    # Prefer .xcworkspace over .xcodeproj. CWD is searched two levels deep
+    # (repo/App/App.xcodeproj); the parent only one level, so a project
+    # bundle directly in it means CWD is inside that project, while a project
+    # inside a sibling directory (~/dev/OtherApp/OtherApp.xcodeproj) is
+    # someone else's and must not be adopted.
+    local dir depth ws proj
     for dir in "$CWD" "$(dirname "$CWD")"; do
-        local ws
+        if [[ "$dir" == "$CWD" ]]; then depth=2; else depth=1; fi
         # Exclude the auto-generated workspace nested inside a *.xcodeproj
         # bundle, otherwise PROJECT_NAME resolves to "project" on bare projects.
-        ws=$(find "$dir" -maxdepth 2 -name "*.xcworkspace" ! -path "*/Pods/*" ! -path "*/.git/*" ! -path "*.xcodeproj/*" 2>/dev/null | head -1)
+        ws=$(find "$dir" -maxdepth "$depth" -name "*.xcworkspace" ! -path "*/Pods/*" ! -path "*/.git/*" ! -path "*.xcodeproj/*" 2>/dev/null | head -1)
         if [[ -n "$ws" ]]; then echo "$ws"; return 0; fi
-        local proj
-        proj=$(find "$dir" -maxdepth 2 -name "*.xcodeproj" ! -path "*/.git/*" 2>/dev/null | head -1)
+        proj=$(find "$dir" -maxdepth "$depth" -name "*.xcodeproj" ! -path "*/.git/*" 2>/dev/null | head -1)
         if [[ -n "$proj" ]]; then echo "$proj"; return 0; fi
     done
     return 1
@@ -56,6 +60,13 @@ if [[ -z "$PROJECT" ]]; then
 fi
 
 PROJECT_NAME=$(basename "$PROJECT" | sed 's/\.[^.]*$//')
+
+# Scan from CWD when the project lives under it; when it was found in the
+# parent, CWD is a subdirectory and the whole project root is in scope.
+case "$PROJECT" in
+    "$CWD"/*) SCAN_ROOT="$CWD" ;;
+    *)        SCAN_ROOT=$(dirname "$PROJECT") ;;
+esac
 
 # ── Locate the DerivedData folder ────────────────────────────────────────────
 
@@ -93,7 +104,7 @@ INDEX_STORE="${DATA_STORE}/Index.noindex/DataStore"
 # files are noise in the count as well as the dominant cost of producing it.
 
 STALE_LIST=$(
-    find "$CWD" \
+    find "$SCAN_ROOT" \
         \( -name .git -o -name .build -o -name Pods -o -name node_modules \
            -o -name DerivedData \) -prune -o \
         -type f -name "*.swift" -newer "$INDEX_STORE" -print 2>/dev/null

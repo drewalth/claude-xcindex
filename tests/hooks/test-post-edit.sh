@@ -45,13 +45,18 @@ state_file_for() {
 }
 
 # run_hook <tool_input_json> [project_dir] [tmpdir] [cwd] [path]
-# Captures stdout+stderr into $output and the exit code into $status. cwd is the
-# directory bash runs from (only relevant for relative-path absolutization);
-# CLAUDE_PROJECT_DIR drives the state-file hash independently of cwd.
+# Delivers input the way Claude Code does: a JSON envelope on stdin with the
+# tool's arguments under `tool_input`. An empty <tool_input_json> sends empty
+# stdin. Captures stdout+stderr into $output and the exit code into $status.
+# cwd is the directory bash runs from (only relevant for relative-path
+# absolutization); CLAUDE_PROJECT_DIR drives the state-file hash independently.
 run_hook() {
-    local input="$1" proj="${2:-$root/proj}" tmp="${3:-$root/tmp}" cwd="${4:-${2:-$root/proj}}" path="${5:-$PATH}"
+    local input="$1" proj="${2:-$root/proj}" tmp="${3:-$root/tmp}" cwd="${4:-${2:-$root/proj}}" path="${5:-$PATH}" payload=""
     mkdir -p "$proj" "$tmp" "$cwd"
-    output=$(cd "$cwd" && CLAUDE_TOOL_INPUT="$input" CLAUDE_PROJECT_DIR="$proj" TMPDIR="$tmp" PATH="$path" bash "$HOOK" 2>&1)
+    if [[ -n "$input" ]]; then
+        payload="{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Edit\",\"tool_input\":${input}}"
+    fi
+    output=$(cd "$cwd" && printf '%s' "$payload" | env -u CLAUDE_TOOL_INPUT CLAUDE_PROJECT_DIR="$proj" TMPDIR="$tmp" PATH="$path" bash "$HOOK" 2>&1)
     status=$?
 }
 
@@ -66,7 +71,13 @@ case "$output" in
     *"'Foo.swift' was edited"*) ;;
     *) fail "case1: expected stale-warning for Foo.swift, got: '$output'" ;;
 esac
-ok 'Swift edit recorded at the Freshness.swift contract path + warns'
+# Plain PostToolUse stdout only reaches the transcript; the note must travel as
+# additionalContext for Claude to see it.
+[[ "$(printf '%s' "$output" | plutil -extract hookSpecificOutput.hookEventName raw -o - - 2>/dev/null)" == PostToolUse ]] \
+    || fail "case1: expected PostToolUse JSON envelope, got: '$output'"
+printf '%s' "$output" | plutil -extract hookSpecificOutput.additionalContext raw -o - - >/dev/null 2>&1 \
+    || fail "case1: expected additionalContext in output, got: '$output'"
+ok 'Swift edit recorded at the Freshness.swift contract path + warns via additionalContext'
 
 # ── Case 2: CLAUDE_PROJECT_DIR drives the hash, not cwd ───────────────────────
 # Run from an unrelated cwd; the state file must still be keyed on the project
@@ -163,5 +174,17 @@ case "$output" in
     *) fail "case10: expected trap diagnostic on abort, got: '$output'" ;;
 esac
 ok 'trap backstop forces exit 0 and emits a diagnostic on abnormal abort'
+
+# ── Case 11: a filename with JSON metacharacters still yields valid JSON ─────
+p11="$root/case11/proj"; t11="$root/case11/tmp"
+run_hook "{\"file_path\":\"$p11/We\\\"ird\\\\Name.swift\"}" "$p11" "$t11"
+[[ "$status" -eq 0 ]] || fail "case11: expected exit 0, got $status"
+ctx=$(printf '%s' "$output" | plutil -extract hookSpecificOutput.additionalContext raw -o - - 2>/dev/null) \
+    || fail "case11: output is not valid JSON: '$output'"
+case "$ctx" in
+    *'We"ird\Name.swift'*) ;;
+    *) fail "case11: filename not round-tripped through JSON, got: '$ctx'" ;;
+esac
+ok 'filename with quote and backslash round-trips through the JSON output'
 
 printf '\nAll %d post-edit hook checks passed.\n' "$PASS"

@@ -178,4 +178,34 @@ case "$output" in
 esac
 ok 'vendored trees (.build/Pods/node_modules) are pruned from the stale scan'
 
+# ── Case 8: a sibling repo's project must not be adopted ─────────────────────
+# Running from a non-Xcode repo that sits next to an Xcode repo (~/dev/tool next
+# to ~/dev/App/App.xcodeproj) must stay silent; otherwise the hook counts this
+# repo's sources against the sibling's index and reports a bogus stale count.
+home8="$root/home8"
+ds8="$home8/Library/Developer/Xcode/DerivedData/Sib-xyz/Index.noindex/DataStore"
+mkdir -p "$root/case8/Sib/Sib.xcodeproj/project.xcworkspace" "$root/case8/tool" "$ds8"
+touch -t 200001010000 "$ds8"
+: > "$root/case8/tool/Unrelated.swift"
+run_hook "$root/case8/tool" "$home8"
+[[ "$status" -eq 0 ]] || fail "case8: expected exit 0, got $status (output: '$output')"
+[[ -z "$output" ]] || fail "case8: sibling repo's project must not be adopted, got: '$output'"
+ok "a sibling directory's project is not adopted"
+
+# ── Case 9: project in the parent → scan the project root, not just CWD ──────
+# From App/Sources, a stale file elsewhere in App/ is still stale for App's index.
+home9="$root/home9"
+p9="$root/case9/Up"
+ds9="$home9/Library/Developer/Xcode/DerivedData/Up-xyz/Index.noindex/DataStore"
+mkdir -p "$p9/Up.xcodeproj/project.xcworkspace" "$p9/Sources" "$p9/Tests" "$ds9"
+touch -t 200001010000 "$ds9"
+: > "$p9/Tests/OutsideCwd.swift"
+run_hook "$p9/Sources" "$home9"
+[[ "$status" -eq 0 ]] || fail "case9: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"1 Swift file(s) newer than the index for Up"*OutsideCwd.swift*) ;;
+    *) fail "case9: expected stale scan rooted at the project dir, got: '$output'" ;;
+esac
+ok 'project found in the parent → stale scan covers the whole project root'
+
 printf '\nAll %d session-start hook checks passed.\n' "$PASS"
