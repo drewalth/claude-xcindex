@@ -24,6 +24,10 @@ final class FakeLSPServer {
         case referencesTimeout = "references_timeout"
         /// Respond to initialize; exit the process when references lands.
         case exitAfterInit = "exit_after_init"
+        /// Respond to initialize; on references close stdout, then exit
+        /// 300 ms later. Widens the window where the client sees EOF
+        /// (and fails the reply) before Foundation reaps the child.
+        case closeStdoutThenExit = "close_stdout_then_exit"
     }
 
     let binaryURL: URL
@@ -53,7 +57,7 @@ final class FakeLSPServer {
     private static func pythonScript(mode: Mode) -> String {
         """
         #!/usr/bin/env python3
-        import json, sys, time
+        import json, os, sys, time
 
         MODE = \(String(reflecting: mode.rawValue))
 
@@ -108,6 +112,10 @@ final class FakeLSPServer {
                     time.sleep(60)
                 elif MODE == 'exit_after_init':
                     sys.exit(0)
+                elif MODE == 'close_stdout_then_exit':
+                    os.close(1)
+                    time.sleep(0.3)
+                    os._exit(0)
                 else:
                     send({'jsonrpc': '2.0', 'id': mid, 'result': []})
             elif method == 'shutdown':

@@ -1,5 +1,14 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.4
 import PackageDescription
+
+/// Swift 6 mode already checks concurrency completely. These opt into the
+/// Swift 7 isolation semantics now and fail the build on any warning, so a
+/// downgraded diagnostic (e.g. via @preconcurrency) can't slip through.
+let strictSettings: [SwiftSetting] = [
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    .enableUpcomingFeature("InferIsolatedConformances"),
+    .treatAllWarnings(as: .error)
+]
 
 let package = Package(
     name: "xcindex",
@@ -29,12 +38,15 @@ let package = Package(
                 .product(name: "LanguageServerProtocol", package: "swift-tools-protocols"),
                 .product(name: "LanguageServerProtocolTransport", package: "swift-tools-protocols")
             ],
-            path: "Sources/xcindex"
+            path: "Sources/xcindex",
+            swiftSettings: strictSettings
         ),
         .testTarget(
             name: "xcindexTests",
             dependencies: ["xcindex"],
-            path: "Tests/xcindexTests"
+            path: "Tests/xcindexTests",
+            swiftSettings: strictSettings
         )
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

@@ -1,6 +1,7 @@
 import Foundation
 import LanguageServerProtocol
 import LanguageServerProtocolTransport
+import os
 
 // MARK: - LSPClient
 
@@ -259,15 +260,31 @@ actor LSPClient {
             context: ReferencesContext(includeDeclaration: true)
         )
 
-        return try await Self.sendAndRaceTimeout(
-            connection: connection,
-            request: request,
-            timeout: timeout,
-            timeoutError: LSPClientError.referencesTimeout,
-            wrapResponseError: { err in
-                LSPClientError.protocolError("\(err.code.rawValue): \(err.message)")
-            }
-        )
+        do {
+            return try await Self.sendAndRaceTimeout(
+                connection: connection,
+                request: request,
+                timeout: timeout,
+                timeoutError: LSPClientError.referencesTimeout,
+                wrapResponseError: { err in
+                    if Self.isConnectionClosed(err) {
+                        return LSPClientError.processTerminated
+                    }
+                    return LSPClientError.protocolError("\(err.code.rawValue): \(err.message)")
+                }
+            )
+        } catch LSPClientError.processTerminated {
+            state = .terminated
+            throw LSPClientError.processTerminated
+        }
+    }
+
+    /// The transport fails pending replies with this error when the child's
+    /// stdout hits EOF, which can precede Foundation reaping the child, so
+    /// `process.isRunning` may still read true. A closed connection never
+    /// reopens, so treat it as termination rather than a server error.
+    static func isConnectionClosed(_ err: ResponseError) -> Bool {
+        err.code == .internalError && err.message == "JSON-RPC connection closed"
     }
 
     /// Send `request` via `connection` and race the reply against a
@@ -367,16 +384,15 @@ actor LSPClient {
 // between a JSON-RPC reply callback and a timeout task — the first
 // caller to `trySet()` proceeds; the loser no-ops.
 
-final class OneshotFlag: @unchecked Sendable {
-    private let lock = NSLock()
-    private var isSet = false
+final class OneshotFlag: Sendable {
+    private let isSet = OSAllocatedUnfairLock(initialState: false)
 
     func trySet() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !isSet else { return false }
-        isSet = true
-        return true
+        isSet.withLock { set in
+            guard !set else { return false }
+            set = true
+            return true
+        }
     }
 }
 
@@ -499,26 +515,21 @@ enum LSPClientError: LocalizedError, Equatable {
 // sourcekit-lsp children would otherwise be orphaned. The atexit hook
 // installed in main.swift SIGTERMs everything still in this set.
 
-private nonisolated(unsafe) var _xcindexTrackedChildPIDs: Set<Int32> = []
-private let _xcindexTrackedChildPIDsLock = NSLock()
+private let _xcindexTrackedChildPIDs = OSAllocatedUnfairLock(initialState: Set<Int32>())
 
 func xcindexTrackChildPID(_ pid: Int32) {
-    _xcindexTrackedChildPIDsLock.lock()
-    _xcindexTrackedChildPIDs.insert(pid)
-    _xcindexTrackedChildPIDsLock.unlock()
+    _ = _xcindexTrackedChildPIDs.withLock { $0.insert(pid) }
 }
 
 func xcindexUntrackChildPID(_ pid: Int32) {
-    _xcindexTrackedChildPIDsLock.lock()
-    _xcindexTrackedChildPIDs.remove(pid)
-    _xcindexTrackedChildPIDsLock.unlock()
+    _ = _xcindexTrackedChildPIDs.withLock { $0.remove(pid) }
 }
 
 func xcindexTerminateTrackedChildren() {
-    _xcindexTrackedChildPIDsLock.lock()
-    let pids = _xcindexTrackedChildPIDs
-    _xcindexTrackedChildPIDs.removeAll()
-    _xcindexTrackedChildPIDsLock.unlock()
+    let pids = _xcindexTrackedChildPIDs.withLock { pids in
+        defer { pids.removeAll() }
+        return pids
+    }
     for pid in pids {
         kill(pid, SIGTERM)
     }

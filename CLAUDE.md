@@ -82,6 +82,12 @@ actor so the `querierCache` is race-free; each `IndexQuerier` is reached
 only through the actor, which keeps IndexStoreDB access serialized per store
 path.
 
+Both targets build in Swift 6 mode with `NonisolatedNonsendingByDefault`,
+`InferIsolatedConformances`, and warnings as errors (`Package.swift`). Don't
+add `@unchecked Sendable`, `nonisolated(unsafe)`, or `@preconcurrency`;
+guard shared mutable state with `OSAllocatedUnfairLock` (`Mutex` needs
+macOS 15, and the floor is 14).
+
 ### Freshness model
 
 The index only updates when the user builds in Xcode. Claude editing files

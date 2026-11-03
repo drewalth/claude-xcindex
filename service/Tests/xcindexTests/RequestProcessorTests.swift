@@ -56,8 +56,11 @@ struct RequestProcessorTests {
         #expect(hasDegradationWarning || hasVerified)
     }
 
-    @Test("dead LSP client is evicted from the cache after the subprocess exits mid-request")
-    func deadClientEviction() async throws {
+    @Test(
+        "dead LSP client is evicted from the cache after the subprocess exits mid-request",
+        arguments: [FakeLSPServer.Mode.exitAfterInit, .closeStdoutThenExit]
+    )
+    func deadClientEviction(mode: FakeLSPServer.Mode) async throws {
         // Stand up a fake sourcekit-lsp that exits the moment a
         // textDocument/references request lands. Two consecutive
         // planRename calls should each end up launching their own
@@ -67,7 +70,7 @@ struct RequestProcessorTests {
         // hook avoids mutating `SOURCEKIT_LSP_PATH` — that env var is
         // process-global and would leak into other test suites
         // running in parallel.
-        let fake = try FakeLSPServer(mode: .exitAfterInit)
+        let fake = try FakeLSPServer(mode: mode)
 
         let fixture = try FixtureBuilder.buildCanaryIndex()
         let packageRoot = URL(fileURLWithPath: fixture.sourceDir)

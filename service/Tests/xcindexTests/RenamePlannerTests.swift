@@ -1,4 +1,5 @@
 import Foundation
+import os
 import IndexStoreDB
 import Testing
 @testable import xcindex
@@ -147,7 +148,7 @@ struct RenamePlannerTests {
     // MARK: - SDK-path refusal
 
     @Test("definition in an SDK path refuses with sdk_symbol_rename")
-    func sdkPathRefusal() {
+    func sdkPathRefusal() throws {
         // A real SPM fixture can't reliably surface a definition in an
         // SDK path — stdlib symbols aren't always indexed, and relying
         // on Foundation/UIKit makes the test toolchain-dependent.
@@ -165,15 +166,15 @@ struct RenamePlannerTests {
         let planner = RenamePlanner(querier: stub, editedFiles: [], isDisabled: false)
         let plan = planner.plan(usr: "s:10Foundation3URLV", newName: "Address")
 
-        let refusal = try? #require(plan.refusal)
-        #expect(refusal?.reason == "sdk_symbol_rename")
-        #expect(refusal?.message.contains(sdkPath) == true)
+        let refusal = try #require(plan.refusal)
+        #expect(refusal.reason == "sdk_symbol_rename")
+        #expect(refusal.message.contains(sdkPath))
         #expect(plan.oldName == "URL")
         #expect(plan.ranges.isEmpty)
     }
 
     @Test("empty definition path refuses with synthesized_symbol_not_renameable")
-    func synthesizedSymbolRefusal() {
+    func synthesizedSymbolRefusal() throws {
         // Compiler-synthesized members (Codable inits, property-wrapper
         // accessors) resolve to a definition occurrence with no
         // rewritable source range — IndexStoreDB reports path="" and/or
@@ -191,8 +192,8 @@ struct RenamePlannerTests {
         let planner = RenamePlanner(querier: stub, editedFiles: [], isDisabled: false)
         let plan = planner.plan(usr: "s:7MyApp4FooV", newName: "Bar")
 
-        let refusal = try? #require(plan.refusal)
-        #expect(refusal?.reason == "synthesized_symbol_not_renameable")
+        let refusal = try #require(plan.refusal)
+        #expect(refusal.reason == "synthesized_symbol_not_renameable")
         #expect(plan.ranges.isEmpty)
     }
 
@@ -421,7 +422,7 @@ struct RenamePlannerTests {
     }
 
     @Test("reconcile: indexstore only (LSP non-empty but missing this range) → yellow-disagreement")
-    func reconcileIndexstoreOnly() {
+    func reconcileIndexstoreOnly() throws {
         let indexstorePlan = Self.makePlan(ranges: [
             range(path: "/Users/x/App/A.swift", line: 10, col: 7, tier: .greenIndexstore)
         ])
@@ -433,16 +434,16 @@ struct RenamePlannerTests {
             )
         ]
         let merged = RenamePlanner.reconcile(indexstorePlan, with: lsp)
-        let aRange = try? #require(merged.ranges.first { ($0.path as NSString).lastPathComponent == "A.swift" })
-        #expect(aRange?.tier == .yellowDisagreement)
-        #expect(aRange?.reasons.contains(.lspDidNotEcho) == true)
+        let aRange = try #require(merged.ranges.first { ($0.path as NSString).lastPathComponent == "A.swift" })
+        #expect(aRange.tier == .yellowDisagreement)
+        #expect(aRange.reasons.contains(.lspDidNotEcho))
         // Must not carry `.sourcekitLspOnly` — that reason means the
         // opposite (LSP-only, indexstore didn't see it).
-        #expect(aRange?.reasons.contains(.sourcekitLspOnly) == false)
+        #expect(!aRange.reasons.contains(.sourcekitLspOnly))
     }
 
     @Test("reconcile: LSP only → yellow-lsp-only range added to plan")
-    func reconcileLspOnlyAdded() {
+    func reconcileLspOnlyAdded() throws {
         let indexstorePlan = Self.makePlan(ranges: [
             range(path: "/Users/x/App/A.swift", line: 10, col: 7, tier: .greenIndexstore)
         ])
@@ -457,10 +458,10 @@ struct RenamePlannerTests {
         let merged = RenamePlanner.reconcile(indexstorePlan, with: lsp)
         // 2 ranges: the A.swift (upgraded to green-verified) + Macros.swift (new yellow-lsp-only)
         #expect(merged.ranges.count == 2)
-        let macroRange = try? #require(merged.ranges.first { ($0.path as NSString).lastPathComponent == "Macros.swift" })
-        #expect(macroRange?.tier == .yellowLspOnly)
-        #expect(macroRange?.source == .sourcekitLsp)
-        #expect(macroRange?.reasons.contains(.sourcekitLspOnly) == true)
+        let macroRange = try #require(merged.ranges.first { ($0.path as NSString).lastPathComponent == "Macros.swift" })
+        #expect(macroRange.tier == .yellowLspOnly)
+        #expect(macroRange.source == .sourcekitLsp)
+        #expect(macroRange.reasons.contains(.sourcekitLspOnly))
     }
 
     @Test("reconcile: LSP not consulted → warnings contains reconciliation_unavailable, tiers unchanged")
@@ -562,18 +563,17 @@ private struct StubBackend: RenamePlannerQueryBackend {
 // MARK: - Shared fixture
 
 private enum FixtureHolder {
-    private nonisolated(unsafe) static var _built: BuiltIndex?
-    private static let lock = NSLock()
+    private static let built = OSAllocatedUnfairLock<BuiltIndex?>(initialState: nil)
 
     static func shared() throws -> BuiltIndex {
-        lock.lock()
-        defer { lock.unlock() }
-        if let built = _built {
-            return built
+        try built.withLock { cached in
+            if let cached {
+                return cached
+            }
+            let fresh = try FixtureBuilder.buildCanaryIndex()
+            cached = fresh
+            return fresh
         }
-        let built = try FixtureBuilder.buildCanaryIndex()
-        _built = built
-        return built
     }
 }
 

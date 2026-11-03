@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import os
 import LanguageServerProtocol
 import Testing
 @testable import xcindex
@@ -287,17 +288,16 @@ struct LSPClientTests {
 // MARK: - Shared fixture
 
 private enum FixtureHolder {
-    private nonisolated(unsafe) static var _built: BuiltIndex?
-    private static let lock = NSLock()
+    private static let built = OSAllocatedUnfairLock<BuiltIndex?>(initialState: nil)
 
     static func shared() throws -> BuiltIndex {
-        lock.lock()
-        defer { lock.unlock() }
-        if let built = _built {
-            return built
+        try built.withLock { cached in
+            if let cached {
+                return cached
+            }
+            let fresh = try FixtureBuilder.buildCanaryIndex()
+            cached = fresh
+            return fresh
         }
-        let built = try FixtureBuilder.buildCanaryIndex()
-        _built = built
-        return built
     }
 }
