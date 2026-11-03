@@ -430,11 +430,13 @@ func runCommand(_ path: String, args: [String]) -> String? {
     proc.arguments = args
     let pipe = Pipe()
     proc.standardOutput = pipe
-    proc.standardError = Pipe()
+    proc.standardError = FileHandle.nullDevice
     do {
         try proc.run()
-        proc.waitUntilExit()
+        // Drain before waiting: a child that fills the pipe buffer blocks on
+        // write and never exits.
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
         return String(data: data, encoding: .utf8)
     } catch {
         return nil
