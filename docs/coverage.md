@@ -33,7 +33,7 @@ _0 verified / 1 stub symbols · recall 100% · precision 0% · max plan 11.0 ms_
 | ------ | ---- | --------: | -------: | -----: | --------: | --------: | ------ |
 | `Logger` | struct | 188 | 0 | 100% | 0% | 11.0 ms | stub |
 
-### `TCA` — pinned at `1.25.5` (`1eaa6fa2ee57`)
+### `TCA` — pinned at `1.26.2` (`377da4061db1`)
 
 _0 verified / 1 stub symbols · recall 100% · precision 0% · max plan 0.9 ms_
 

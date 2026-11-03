@@ -2,9 +2,9 @@
   "fixture": "TCA",
   "fixture_source": "https://github.com/pointfreeco/swift-composable-architecture",
   "upstream": {
-    "tag": "1.25.5",
-    "sha": "1eaa6fa2ee57ac42843283b9fd3457af408c858d",
-    "pinned_on": "2026-04-20"
+    "tag": "1.26.2",
+    "sha": "377da4061db10d26337a71bb279c506bb951f50f",
+    "pinned_on": "2026-11-02"
   },
   "curation_method": "One symbol (Box) hand-curated against the pinned SHA. Remaining stubs need ground truth curation followed by second-pair-of-eyes verification per tests/coverage/CONVENTIONS.md.",
   "generated_at": "2026-04-20T00:00:00Z",
