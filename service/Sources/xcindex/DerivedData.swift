@@ -2,13 +2,15 @@ import Foundation
 
 /// Locates the IndexStore DataStore for a given project path.
 ///
-/// Strategy (mirrors Block's xcode-index-mcp approach):
+/// Strategy:
 ///  1. If `indexStorePath` is provided directly, use it.
-///  2. Derive the project name from `projectPath` (basename without extension).
-///  3. Scan `~/Library/Developer/Xcode/DerivedData/` for directories whose
-///     name begins with `<ProjectName>-`.
-///  4. Among matches, return the one most recently modified.
-///  5. Append `Index.noindex/DataStore`.
+///  2. A directory `projectPath` resolves to the .xcworkspace/.xcodeproj
+///     inside it; one without a bundle (SwiftPM package) keeps its own name.
+///  3. Scan DerivedData for folders named `<ProjectName>-*`.
+///  4. Drop folders whose info.plist `WorkspacePath` names a different
+///     checkout — worktrees and clones share a project name, and the newest
+///     sibling's index is silently wrong rather than missing.
+///  5. Prefer an exact `WorkspacePath` match, then the most recently modified.
 enum DerivedDataLocator {
     /// - Parameter derivedDataBaseOverride: Override the DerivedData
     ///   directory used for scanning. Defaults to the user's Xcode
@@ -28,7 +30,7 @@ enum DerivedDataLocator {
             throw LocatorError.noProjectPath
         }
 
-        let projectURL = URL(fileURLWithPath: projectPath)
+        let projectURL = resolveProjectBundle(URL(fileURLWithPath: projectPath))
         let projectName = projectURL.deletingPathExtension().lastPathComponent
 
         guard !projectName.isEmpty else {
@@ -54,11 +56,18 @@ enum DerivedDataLocator {
         )
 
         let prefix = "\(projectName)-"
-        let candidates = contents.filter { $0.lastPathComponent.hasPrefix(prefix) }
+        let wanted = projectURL.resolvingSymlinksInPath().path
+        let owned = contents
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .map { (url: $0, owner: workspacePath(of: $0)) }
+            .filter { $0.owner == nil || $0.owner == wanted }
 
-        guard !candidates.isEmpty else {
+        guard !owned.isEmpty else {
             throw LocatorError.noDerivedData(projectName, derivedDataBase.path)
         }
+
+        let exact = owned.filter { $0.owner == wanted }.map(\.url)
+        let candidates = exact.isEmpty ? owned.map(\.url) : exact
 
         let sorted = try candidates.sorted { lhs, rhs in
             let dateA = try lhs.resourceValues(forKeys: [.contentModificationDateKey])
@@ -76,6 +85,34 @@ enum DerivedDataLocator {
         }
 
         return dataStore.path
+    }
+
+    // MARK: - Project resolution
+
+    /// Maps a plain directory to the Xcode bundle it contains, preferring a
+    /// workspace. Bundles and bundle-less directories pass through unchanged.
+    private static func resolveProjectBundle(_ url: URL) -> URL {
+        guard !["xcodeproj", "xcworkspace"].contains(url.pathExtension),
+              let children = try? FileManager.default.contentsOfDirectory(
+                  at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+              )
+        else { return url }
+        for ext in ["xcworkspace", "xcodeproj"] {
+            if let match = children.filter({ $0.pathExtension == ext })
+                .min(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                return match
+            }
+        }
+        return url
+    }
+
+    /// The project Xcode recorded as owning a DerivedData folder, if any.
+    private static func workspacePath(of folder: URL) -> String? {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("info.plist")),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let path = (plist as? [String: Any])?["WorkspacePath"] as? String
+        else { return nil }
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
     // MARK: - Custom DerivedData path

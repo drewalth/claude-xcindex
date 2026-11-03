@@ -33,6 +33,21 @@ STATE_FILE="${TMP}/xcindex-edited-${HASH}.txt"
 
 # ── Find the nearest .xcodeproj or .xcworkspace ──────────────────────────────
 
+# physical <path>: resolve symlinks in the directory part. find does not descend
+# into a symlinked starting point, and Xcode records real paths in info.plist.
+physical() {
+    local dir
+    if dir=$(cd -P "$(dirname "$1")" 2>/dev/null && pwd -P); then
+        printf '%s/%s' "${dir%/}" "$(basename "$1")"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# The raw CWD keys the state file (must match Freshness.swift); discovery and
+# the stale scan use the physical path.
+SEARCH_DIR=$(cd -P "$CWD" 2>/dev/null && pwd -P) || SEARCH_DIR="$CWD"
+
 find_project() {
     # Prefer .xcworkspace over .xcodeproj. CWD is searched two levels deep
     # (repo/App/App.xcodeproj); the parent only one level, so a project
@@ -40,8 +55,8 @@ find_project() {
     # inside a sibling directory (~/dev/OtherApp/OtherApp.xcodeproj) is
     # someone else's and must not be adopted.
     local dir depth ws proj
-    for dir in "$CWD" "$(dirname "$CWD")"; do
-        if [[ "$dir" == "$CWD" ]]; then depth=2; else depth=1; fi
+    for dir in "$SEARCH_DIR" "$(dirname "$SEARCH_DIR")"; do
+        if [[ "$dir" == "$SEARCH_DIR" ]]; then depth=2; else depth=1; fi
         # Exclude the auto-generated workspace nested inside a *.xcodeproj
         # bundle, otherwise PROJECT_NAME resolves to "project" on bare projects.
         ws=$(find "$dir" -maxdepth "$depth" -name "*.xcworkspace" ! -path "*/Pods/*" ! -path "*/.git/*" ! -path "*.xcodeproj/*" 2>/dev/null | head -1)
@@ -64,7 +79,7 @@ PROJECT_NAME=$(basename "$PROJECT" | sed 's/\.[^.]*$//')
 # Scan from CWD when the project lives under it; when it was found in the
 # parent, CWD is a subdirectory and the whole project root is in scope.
 case "$PROJECT" in
-    "$CWD"/*) SCAN_ROOT="$CWD" ;;
+    "$SEARCH_DIR"/*) SCAN_ROOT="$SEARCH_DIR" ;;
     *)        SCAN_ROOT=$(dirname "$PROJECT") ;;
 esac
 
@@ -78,11 +93,26 @@ if [[ -n "$CUSTOM_PATH" ]]; then
     DERIVED_DATA_BASE="$CUSTOM_PATH"
 fi
 
-DATA_STORE=$(
-    ls -dt "${DERIVED_DATA_BASE}/${PROJECT_NAME}-"* 2>/dev/null \
-    | head -1
-) || true   # no match → ls exits non-zero; without this, set -e/pipefail
-            # aborts before the "no index" guard below can print + exit 0
+# Worktrees and clones share a project name, so `<Name>-*` can match another
+# checkout's folder. Skip folders whose info.plist WorkspacePath names a
+# different project; prefer an exact match, newest first. Mirrors
+# DerivedDataLocator.indexStorePath.
+pick_data_store() {
+    local folder owner fallback=""
+    while IFS= read -r folder; do
+        [[ -n "$folder" ]] || continue
+        owner=$(plutil -extract WorkspacePath raw -o - "$folder/info.plist" 2>/dev/null) || owner=""
+        if [[ -z "$owner" ]]; then
+            [[ -n "$fallback" ]] || fallback="$folder"
+        elif [[ "$(physical "$owner")" == "$PROJECT" ]]; then
+            printf '%s' "$folder"
+            return 0
+        fi
+    done < <(ls -dt "${DERIVED_DATA_BASE}/${PROJECT_NAME}-"* 2>/dev/null)
+    printf '%s' "$fallback"
+}
+
+DATA_STORE=$(pick_data_store) || true
 
 if [[ -z "$DATA_STORE" || ! -d "$DATA_STORE/Index.noindex/DataStore" ]]; then
     echo "[xcindex] No Xcode index found for ${PROJECT_NAME}." \

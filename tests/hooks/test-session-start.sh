@@ -208,4 +208,45 @@ case "$output" in
 esac
 ok 'project found in the parent → stale scan covers the whole project root'
 
+# write_owner <derived_data_folder> <workspace_path>: Xcode's info.plist record.
+write_owner() {
+    plutil -create xml1 "$1/info.plist"
+    plutil -insert WorkspacePath -string "$2" "$1/info.plist"
+}
+
+# ── Case 10: worktrees share a name → pick the folder this checkout owns ─────
+# The other checkout's folder is newer; recency alone would pick it. Run via a
+# symlink to the project dir, since Xcode records the real path.
+home10="$root/home10"
+dd10="$home10/Library/Developer/Xcode/DerivedData"
+p10="$root/case10/Wt"
+mkdir -p "$p10/Wt.xcodeproj/project.xcworkspace" \
+         "$dd10/Wt-mine/Index.noindex/DataStore" "$dd10/Wt-other/Index.noindex/DataStore"
+ln -s "$p10" "$root/case10/link"
+write_owner "$dd10/Wt-mine" "$(cd -P "$p10" && pwd -P)/Wt.xcodeproj"
+write_owner "$dd10/Wt-other" "$root/case10/Wt.worktree/Wt.xcodeproj"
+touch -t 200001010000 "$dd10/Wt-mine/Index.noindex/DataStore" "$dd10/Wt-mine"
+touch -t 200101010000 "$dd10/Wt-other/Index.noindex/DataStore"
+run_hook "$root/case10/link" "$home10"
+[[ "$status" -eq 0 ]] || fail "case10: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"for Wt (last built 2000-01-01"*) ;;
+    *) fail "case10: expected this checkout's index (built 2000-01-01), got: '$output'" ;;
+esac
+ok "same-named DerivedData folders: the one whose WorkspacePath matches wins"
+
+# ── Case 11: only another checkout's folder exists → no index, not its index ─
+home11="$root/home11"
+dd11="$home11/Library/Developer/Xcode/DerivedData"
+p11="$root/case11/Wt"
+mkdir -p "$p11/Wt.xcodeproj/project.xcworkspace" "$dd11/Wt-other/Index.noindex/DataStore"
+write_owner "$dd11/Wt-other" "$root/case11/Wt.worktree/Wt.xcodeproj"
+run_hook "$p11" "$home11"
+[[ "$status" -eq 0 ]] || fail "case11: expected exit 0, got $status (output: '$output')"
+case "$output" in
+    *"No Xcode index found for Wt"*) ;;
+    *) fail "case11: another checkout's index must not be used, got: '$output'" ;;
+esac
+ok "a DerivedData folder owned by another checkout is never used"
+
 printf '\nAll %d session-start hook checks passed.\n' "$PASS"

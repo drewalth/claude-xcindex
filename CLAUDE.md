@@ -99,9 +99,12 @@ Hooks **warn, never act** — no automatic builds. This is deliberate.
 
 `DerivedDataLocator` (Swift) handles: explicit `indexStorePath`, custom
 `IDECustomDerivedDataLocation` from Xcode defaults, or scanning
-`~/Library/Developer/Xcode/DerivedData/` for `<ProjectName>-*` and picking the
-most recently modified. `hooks/session-start.sh` mirrors the same logic in
-bash so the hook can warn before any MCP call.
+`~/Library/Developer/Xcode/DerivedData/` for `<ProjectName>-*`. A directory
+`projectPath` resolves to the `.xcworkspace`/`.xcodeproj` inside it. Folders
+whose `info.plist` `WorkspacePath` names another checkout are skipped
+(worktrees share a project name); an exact owner match wins, then the most
+recently modified. `hooks/session-start.sh` and `bin/xcindex-doctor` mirror
+this in bash so the hook can warn before any MCP call.
 
 ## Plugin packaging
 
