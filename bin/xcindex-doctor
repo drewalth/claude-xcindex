@@ -219,7 +219,30 @@ dd_base="$HOME/Library/Developer/Xcode/DerivedData"
 custom=$(defaults read com.apple.dt.Xcode IDECustomDerivedDataLocation 2>/dev/null || true)
 [[ -n "$custom" ]] && dd_base="$custom"
 
-dd_dir=$(ls -dt "${dd_base}/${project_name}-"* 2>/dev/null | head -1)
+# Mirrors hooks/session-start.sh#pick_data_store: skip folders another checkout
+# (worktree/clone with the same project name) owns; prefer an exact owner.
+physical() {
+    local dir
+    if dir=$(cd -P "$(dirname "$1")" 2>/dev/null && pwd -P); then
+        printf '%s/%s' "${dir%/}" "$(basename "$1")"
+    else
+        printf '%s' "$1"
+    fi
+}
+project_real=$(physical "$PROJECT")
+dd_dir=""
+dd_fallback=""
+while IFS= read -r folder; do
+    [[ -n "$folder" ]] || continue
+    owner=$(plutil -extract WorkspacePath raw -o - "$folder/info.plist" 2>/dev/null) || owner=""
+    if [[ -z "$owner" ]]; then
+        [[ -n "$dd_fallback" ]] || dd_fallback="$folder"
+    elif [[ "$(physical "$owner")" == "$project_real" ]]; then
+        dd_dir="$folder"
+        break
+    fi
+done < <(ls -dt "${dd_base}/${project_name}-"* 2>/dev/null)
+[[ -n "$dd_dir" ]] || dd_dir="$dd_fallback"
 
 if [[ -z "$dd_dir" ]]; then
     fail "No DerivedData folder for '$project_name' under $dd_base." \

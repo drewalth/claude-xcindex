@@ -136,6 +136,142 @@ struct DerivedDataLocatorTests {
         )
         #expect(resolved.contains("MyApp-workspacehash"))
     }
+
+    // MARK: - Worktrees / clones sharing a project name
+
+    @Test("WorkspacePath match beats a newer same-named folder from another checkout")
+    func workspacePathBeatsRecency() throws {
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let dd = try makeDerivedDataBase(base: base, projects: [
+            ("MyApp-mine", daysAgo: 5, withIndexStore: true),
+            ("MyApp-worktree", daysAgo: 0, withIndexStore: true)
+        ])
+        try writeInfoPlist(dd.appendingPathComponent("MyApp-mine"), workspacePath: "/src/app/MyApp.xcodeproj")
+        try writeInfoPlist(dd.appendingPathComponent("MyApp-worktree"), workspacePath: "/src/app.wt/MyApp.xcodeproj")
+
+        let resolved = try DerivedDataLocator.indexStorePath(
+            projectPath: "/src/app/MyApp.xcodeproj",
+            indexStorePath: nil,
+            derivedDataBaseOverride: dd
+        )
+        #expect(resolved.contains("MyApp-mine"))
+    }
+
+    @Test("a folder owned by another checkout is never used as a fallback")
+    func foreignWorkspacePathRejected() throws {
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        let dd = try makeDerivedDataBase(base: base, projects: [
+            ("MyApp-worktree", daysAgo: 0, withIndexStore: true)
+        ])
+        try writeInfoPlist(dd.appendingPathComponent("MyApp-worktree"), workspacePath: "/src/app.wt/MyApp.xcodeproj")
+
+        let thrown = #expect(throws: DerivedDataLocator.LocatorError.self) {
+            _ = try DerivedDataLocator.indexStorePath(
+                projectPath: "/src/app/MyApp.xcodeproj",
+                indexStorePath: nil,
+                derivedDataBaseOverride: dd
+            )
+        }
+        assertLocator(thrown, is: .noDerivedData)
+    }
+
+    @Test("WorkspacePath comparison resolves symlinks")
+    func workspacePathSymlinks() throws {
+        // ~/dev symlinked to another volume is common; Xcode records the
+        // real path, Claude may pass the link.
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let fm = FileManager.default
+        let real = base.appendingPathComponent("real")
+        let link = base.appendingPathComponent("link")
+        try fm.createDirectory(at: real.appendingPathComponent("MyApp.xcodeproj"), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: link, withDestinationURL: real)
+        let project = link.appendingPathComponent("MyApp.xcodeproj")
+
+        let dd = try makeDerivedDataBase(base: base.appendingPathComponent("dd"), projects: [
+            ("MyApp-mine", daysAgo: 0, withIndexStore: true)
+        ])
+        try writeInfoPlist(
+            dd.appendingPathComponent("MyApp-mine"),
+            workspacePath: real.appendingPathComponent("MyApp.xcodeproj").path
+        )
+
+        let resolved = try DerivedDataLocator.indexStorePath(
+            projectPath: project.path,
+            indexStorePath: nil,
+            derivedDataBaseOverride: dd
+        )
+        #expect(resolved.contains("MyApp-mine"))
+    }
+
+    // MARK: - Directory projectPath
+
+    @Test("a directory projectPath resolves to the project bundle inside it")
+    func directoryResolvesToProject() throws {
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let repo = base.appendingPathComponent("my-app")
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent("MyApp.xcodeproj/project.xcworkspace"),
+            withIntermediateDirectories: true
+        )
+
+        let dd = try makeDerivedDataBase(base: base.appendingPathComponent("dd"), projects: [
+            ("MyApp-hash", daysAgo: 0, withIndexStore: true)
+        ])
+
+        let resolved = try DerivedDataLocator.indexStorePath(
+            projectPath: repo.path,
+            indexStorePath: nil,
+            derivedDataBaseOverride: dd
+        )
+        #expect(resolved.contains("MyApp-hash"))
+    }
+
+    @Test("a directory projectPath prefers .xcworkspace over .xcodeproj")
+    func directoryPrefersWorkspace() throws {
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let repo = base.appendingPathComponent("repo")
+        let fm = FileManager.default
+        try fm.createDirectory(at: repo.appendingPathComponent("App.xcodeproj"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: repo.appendingPathComponent("Suite.xcworkspace"), withIntermediateDirectories: true)
+
+        let dd = try makeDerivedDataBase(base: base.appendingPathComponent("dd"), projects: [
+            ("App-hash", daysAgo: 0, withIndexStore: true),
+            ("Suite-hash", daysAgo: 1, withIndexStore: true)
+        ])
+
+        let resolved = try DerivedDataLocator.indexStorePath(
+            projectPath: repo.path,
+            indexStorePath: nil,
+            derivedDataBaseOverride: dd
+        )
+        #expect(resolved.contains("Suite-hash"))
+    }
+
+    @Test("a directory with no project bundle keeps its own name (SwiftPM package)")
+    func directoryWithoutProjectUsesBasename() throws {
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let pkg = base.appendingPathComponent("Pkg")
+        try FileManager.default.createDirectory(at: pkg, withIntermediateDirectories: true)
+
+        let dd = try makeDerivedDataBase(base: base.appendingPathComponent("dd"), projects: [
+            ("Pkg-hash", daysAgo: 0, withIndexStore: true)
+        ])
+
+        let resolved = try DerivedDataLocator.indexStorePath(
+            projectPath: pkg.path,
+            indexStorePath: nil,
+            derivedDataBaseOverride: dd
+        )
+        #expect(resolved.contains("Pkg-hash"))
+    }
 }
 
 // MARK: - Fixture helpers
@@ -197,6 +333,16 @@ private func makeDerivedDataBase(
         try fm.setAttributes([.modificationDate: mtime], ofItemAtPath: folder.path)
     }
     return base
+}
+
+/// Xcode records the owning project in `<DerivedData folder>/info.plist`.
+private func writeInfoPlist(_ folder: URL, workspacePath: String) throws {
+    let data = try PropertyListSerialization.data(
+        fromPropertyList: ["WorkspacePath": workspacePath],
+        format: .xml,
+        options: 0
+    )
+    try data.write(to: folder.appendingPathComponent("info.plist"))
 }
 
 // swiftlint:enable large_tuple

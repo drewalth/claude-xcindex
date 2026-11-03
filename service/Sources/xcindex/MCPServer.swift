@@ -68,7 +68,8 @@ private enum Schema {
     static var projectParams: [String: Value] {
         [
             "projectPath": string(
-                "Absolute path to the .xcodeproj or .xcworkspace file. " +
+                "Absolute path to the .xcodeproj or .xcworkspace file, or the " +
+                    "directory containing it. " +
                     "Used to locate DerivedData automatically. " +
                     "Omit if you supply indexStorePath directly."
             ),
