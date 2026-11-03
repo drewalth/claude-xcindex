@@ -111,8 +111,7 @@ final class IndexQuerier {
 
         let canonical = db.canonicalOccurrences(ofName: symbolName)
         for occ in canonical {
-            guard seen.insert(occ.symbol.usr).inserted else { continue }
-            guard !occ.location.isSystem else { continue }
+            guard seen.insert(occ.symbol.usr).inserted, !occ.location.isSystem else { continue }
             results.append(SymbolResult(
                 usr: occ.symbol.usr,
                 name: occ.symbol.name,
