@@ -268,12 +268,9 @@ extension RequestProcessor {
         } catch {
             // A dead child or shut-down client must be dropped from the
             // cache so the next planRename re-launches instead of getting
-            // the same corpse back. An exited subprocess surfaces as
-            // `.protocolError("connection closed")`, not
-            // `.processTerminated`, so probe the client's liveness rather
-            // than pattern-matching the error taxonomy — a transient
-            // timeout on a healthy client leaves `isAlive` true and the
-            // cache intact.
+            // the same corpse back. Probe liveness rather than the error
+            // taxonomy: a transient timeout on a healthy client leaves
+            // `isAlive` true and the cache intact.
             if await !client.isAlive {
                 evictLSPClient(for: workspaceRoot)
             }

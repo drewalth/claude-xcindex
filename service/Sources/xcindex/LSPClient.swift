@@ -260,15 +260,31 @@ actor LSPClient {
             context: ReferencesContext(includeDeclaration: true)
         )
 
-        return try await Self.sendAndRaceTimeout(
-            connection: connection,
-            request: request,
-            timeout: timeout,
-            timeoutError: LSPClientError.referencesTimeout,
-            wrapResponseError: { err in
-                LSPClientError.protocolError("\(err.code.rawValue): \(err.message)")
-            }
-        )
+        do {
+            return try await Self.sendAndRaceTimeout(
+                connection: connection,
+                request: request,
+                timeout: timeout,
+                timeoutError: LSPClientError.referencesTimeout,
+                wrapResponseError: { err in
+                    if Self.isConnectionClosed(err) {
+                        return LSPClientError.processTerminated
+                    }
+                    return LSPClientError.protocolError("\(err.code.rawValue): \(err.message)")
+                }
+            )
+        } catch LSPClientError.processTerminated {
+            state = .terminated
+            throw LSPClientError.processTerminated
+        }
+    }
+
+    /// The transport fails pending replies with this error when the child's
+    /// stdout hits EOF, which can precede Foundation reaping the child, so
+    /// `process.isRunning` may still read true. A closed connection never
+    /// reopens, so treat it as termination rather than a server error.
+    static func isConnectionClosed(_ err: ResponseError) -> Bool {
+        err.code == .internalError && err.message == "JSON-RPC connection closed"
     }
 
     /// Send `request` via `connection` and race the reply against a
