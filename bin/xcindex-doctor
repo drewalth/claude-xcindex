@@ -186,10 +186,13 @@ fi
 section "Xcode project"
 
 if [[ -z "$PROJECT" ]]; then
-    # Scan CWD and one level up, prefer .xcworkspace.
+    # Mirrors hooks/session-start.sh#find_project: CWD two levels deep, the
+    # parent one level (a sibling repo's project is not ours), prefer
+    # .xcworkspace, skip the workspace nested inside every .xcodeproj.
     for d in "$(pwd)" "$(dirname "$(pwd)")"; do
+        if [[ "$d" == "$(pwd)" ]]; then depth=2; else depth=1; fi
         for ext in xcworkspace xcodeproj; do
-            found=$(find "$d" -maxdepth 2 -name "*.$ext" ! -path "*/Pods/*" ! -path "*/.git/*" 2>/dev/null | head -1)
+            found=$(find "$d" -maxdepth "$depth" -name "*.$ext" ! -path "*/Pods/*" ! -path "*/.git/*" ! -path "*.xcodeproj/*" 2>/dev/null | head -1)
             if [[ -n "$found" ]]; then
                 PROJECT="$found"
                 break 2

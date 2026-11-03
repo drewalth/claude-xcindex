@@ -19,17 +19,17 @@ set -euo pipefail
 # silently — otherwise a broken freshness signal looks like success.
 trap 'rc=$?; if [[ $rc -ne 0 ]]; then echo "[xcindex] post-edit hook exited unexpectedly (code $rc); this edit may not be recorded for stale-tracking."; fi; exit 0' EXIT
 
-TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
-[[ -z "$TOOL_INPUT" ]] && exit 0
+# Claude Code sends a JSON envelope on stdin; the tool's arguments live under
+# `tool_input`. plutil ships with macOS and parses JSON without a python3 start.
+PAYLOAD=$(cat 2>/dev/null || true)
+[[ -z "$PAYLOAD" ]] && exit 0
 
-FILE_PATH=$(echo "$TOOL_INPUT" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    print(data.get('file_path', data.get('path', '')))
-except Exception:
-    pass
-" 2>/dev/null || true)
+json_field() {
+    printf '%s' "$PAYLOAD" | plutil -extract "$1" raw -o - - 2>/dev/null || true
+}
+
+FILE_PATH=$(json_field tool_input.file_path)
+[[ -z "$FILE_PATH" ]] && FILE_PATH=$(json_field tool_input.path)
 
 [[ -z "$FILE_PATH" ]] && exit 0
 
@@ -53,17 +53,25 @@ STATE_FILE="${TMP}/xcindex-edited-${HASH}.txt"
 
 BASENAME=$(basename "$FILE_PATH")
 
+# PostToolUse stdout is transcript-only; additionalContext is what reaches Claude.
+emit_context() {
+    local msg="$1"
+    msg=${msg//\\/\\\\}
+    msg=${msg//\"/\\\"}
+    printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"%s"}}\n' "$msg"
+}
+
 # Append unless already recorded this session. A failed write (unwritable
 # $TMPDIR, full disk, read-only state file) would otherwise be masked by the
 # trap, silently dropping this file from stale-tracking — so detect it and warn
 # rather than let Claude later report a just-edited file's symbols as fresh.
 if [[ ! -f "$STATE_FILE" ]] || ! grep -qxF "$FILE_PATH" "$STATE_FILE" 2>/dev/null; then
     if ! { echo "$FILE_PATH" >> "$STATE_FILE"; } 2>/dev/null; then
-        echo "[xcindex] could not record edit to '${BASENAME}' (state file unwritable); stale-tracking may miss this file."
+        emit_context "[xcindex] could not record edit to '${BASENAME}' (state file unwritable); stale-tracking may miss this file."
         exit 0
     fi
 fi
 
-echo "[xcindex] '${BASENAME}' was edited — xcindex results for its symbols may be stale until the project is rebuilt in Xcode."
+emit_context "[xcindex] '${BASENAME}' was edited — xcindex results for its symbols may be stale until the project is rebuilt in Xcode."
 
 exit 0

@@ -15,32 +15,25 @@
 set -euo pipefail
 # All external commands use || fallbacks so pipefail never fires an early exit.
 
-# Tool input may arrive via the CLAUDE_TOOL_INPUT env var (used by the
-# other hooks in this plugin) or via stdin (newer convention). Try both.
-TOOL_INPUT="${CLAUDE_TOOL_INPUT:-}"
-if [[ -z "$TOOL_INPUT" ]]; then
-    TOOL_INPUT=$(cat 2>/dev/null || true)
-fi
-[[ -z "$TOOL_INPUT" ]] && exit 0
+# Claude Code sends a JSON envelope on stdin; Grep's arguments live under
+# `tool_input`. plutil ships with macOS and parses JSON without a python3 start.
+PAYLOAD=$(cat 2>/dev/null || true)
+[[ -z "$PAYLOAD" ]] && exit 0
 
-SWIFT_TARGETED=$(printf '%s' "$TOOL_INPUT" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print('no')
-    sys.exit(0)
-glob = (data.get('glob') or '').lower()
-type_ = (data.get('type') or '').lower()
-path = (data.get('path') or '').lower()
-swift_exts = ('.swift', '.m', '.mm')
-matched = (
-    any(glob.endswith(ext) for ext in swift_exts)
-    or type_ == 'swift'
-    or path.endswith(swift_exts)
-)
-print('yes' if matched else 'no')
-" 2>/dev/null || echo 'no')
+json_field() {
+    printf '%s' "$PAYLOAD" | plutil -extract "$1" raw -o - - 2>/dev/null || true
+}
+
+GLOB=$(json_field tool_input.glob)
+TYPE=$(json_field tool_input.type)
+SEARCH_PATH=$(json_field tool_input.path)
+
+shopt -s nocasematch
+SWIFT_TARGETED=no
+case "$GLOB" in *.swift|*.m|*.mm) SWIFT_TARGETED=yes ;; esac
+case "$SEARCH_PATH" in *.swift|*.m|*.mm) SWIFT_TARGETED=yes ;; esac
+[[ "$TYPE" == swift ]] && SWIFT_TARGETED=yes
+shopt -u nocasematch
 
 [[ "$SWIFT_TARGETED" != "yes" ]] && exit 0
 

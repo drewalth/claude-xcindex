@@ -111,8 +111,7 @@ final class IndexQuerier {
 
         let canonical = db.canonicalOccurrences(ofName: symbolName)
         for occ in canonical {
-            guard seen.insert(occ.symbol.usr).inserted else { continue }
-            guard !occ.location.isSystem else { continue }
+            guard seen.insert(occ.symbol.usr).inserted, !occ.location.isSystem else { continue }
             results.append(SymbolResult(
                 usr: occ.symbol.usr,
                 name: occ.symbol.name,
@@ -430,11 +429,13 @@ func runCommand(_ path: String, args: [String]) -> String? {
     proc.arguments = args
     let pipe = Pipe()
     proc.standardOutput = pipe
-    proc.standardError = Pipe()
+    proc.standardError = FileHandle.nullDevice
     do {
         try proc.run()
-        proc.waitUntilExit()
+        // Drain before waiting: a child that fills the pipe buffer blocks on
+        // write and never exits.
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
         return String(data: data, encoding: .utf8)
     } catch {
         return nil
