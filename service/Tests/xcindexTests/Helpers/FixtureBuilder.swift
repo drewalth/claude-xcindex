@@ -88,7 +88,9 @@ enum FixtureBuilder {
             "build",
             "--package-path", packagePath.path,
             "--scratch-path", scratch.path,
-            "-c", "debug"
+            "-c", "debug",
+            // Swift 6.4's swiftbuild backend skips indexing unless asked.
+            "--enable-index-store"
         ]
 
         // Drain stdout/stderr concurrently. Without this, big builds
@@ -135,10 +137,9 @@ enum FixtureBuilder {
             )
         }
 
-        // SwiftPM writes the index store to
-        // <scratch>/<triple>/debug/index/store. The triple directory is
-        // host-dependent (e.g. arm64-apple-macosx), so locate it by
-        // scanning instead of hard-coding.
+        // The native backend writes <scratch>/<triple>/debug/index/store
+        // (triple is host-dependent, so scan); swiftbuild (Swift 6.4+)
+        // writes <scratch>/out/Products/Debug/index/store.
         let storePath = try locateIndexStore(in: scratch)
 
         // reuseScratch = nil: scratch is throwaway, cleanupRoot should
@@ -222,6 +223,10 @@ enum FixtureBuilder {
 
     private static func locateIndexStore(in scratch: URL) throws -> String {
         let fm = FileManager.default
+        let swiftbuild = scratch.appendingPathComponent("out/Products/Debug/index/store")
+        if fm.fileExists(atPath: swiftbuild.path) {
+            return swiftbuild.path
+        }
         let triples = try fm.contentsOfDirectory(
             at: scratch,
             includingPropertiesForKeys: nil,

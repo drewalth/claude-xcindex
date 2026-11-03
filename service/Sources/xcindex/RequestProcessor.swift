@@ -355,6 +355,27 @@ extension RequestProcessor {
         )
     }
 
+    // MARK: - Warm-up
+
+    /// Opens and caches the querier for a project ahead of the first query.
+    /// IndexStoreDB init scans the whole DataStore (seconds on a large app);
+    /// paid here, it overlaps the model's thinking instead of the first tool
+    /// call, which queues behind this on the actor and reuses the result.
+    /// Returns false, silently, when there is no index to open.
+    @discardableResult
+    func warmUp(projectPath: String?, indexStorePath: String? = nil) -> Bool {
+        do {
+            let storePath = try DerivedDataLocator.indexStorePath(
+                projectPath: projectPath,
+                indexStorePath: indexStorePath
+            )
+            _ = try querierForStore(storePath)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeQuerier(_ request: Request) throws -> IndexQuerier {
@@ -400,6 +421,10 @@ extension RequestProcessor {
     /// `private` while the test verifies eviction semantics.
     func lspClientCacheCount() -> Int {
         lspClientCache.count
+    }
+
+    func querierCacheCount() -> Int {
+        querierCache.count
     }
 
     func setLspBinaryOverrideForTesting(_ binary: URL?) {
